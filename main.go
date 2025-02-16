@@ -1,4 +1,4 @@
-// Package main provides command line tool to generate enum code from the type definition.
+// Package main provides entry point for enum generator
 package main
 
 import (
@@ -11,6 +11,9 @@ import (
 
 var version = "dev"
 
+// allow mocking os.Exit in tests
+var osExit = os.Exit
+
 func main() {
 	typeFlag := flag.String("type", "", "type name (must be lowercase)")
 	pathFlag := flag.String("path", "", "output directory path (default: same as source)")
@@ -21,30 +24,35 @@ func main() {
 
 	if *helpFlag {
 		showUsage()
-		os.Exit(0)
+		osExit(0)
+		return
 	}
 	if *versionFlag {
 		fmt.Printf("enum generator %s\n", version)
-		os.Exit(0)
+		osExit(0)
+		return
 	}
 
 	gen, err := generator.New(*typeFlag, *pathFlag)
 	if err != nil {
 		fmt.Printf("%v\n", err)
 		showUsage()
-		os.Exit(1)
+		osExit(1)
+		return
 	}
 
 	gen.SetLowerCase(*lowerFlag)
 
 	if err := gen.Parse("."); err != nil {
 		fmt.Printf("%v\n", err)
-		os.Exit(1)
+		osExit(1)
+		return
 	}
 
 	if err := gen.Generate(); err != nil {
 		fmt.Printf("%v\n", err)
-		os.Exit(1)
+		osExit(1)
+		return
 	}
 }
 
