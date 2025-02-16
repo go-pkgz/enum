@@ -29,8 +29,8 @@ jobs:
           go build -race
 
       - name: test examples
-        run: |
-          go test ./_examples/... -timeout=60s -race
+        working-directory: _examples/status
+        run: go test -timeout=60s -race
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
