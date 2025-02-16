@@ -56,7 +56,7 @@ fmt.Println(string(b)) // prints: {"status":"active"}
 ## Installation
 
 ```bash
-go get -u github.com/go-pkgz/enum
+go install github.com/go-pkgz/enum@latest
 ```
 
 ## Usage
