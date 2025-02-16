@@ -6,7 +6,7 @@
 ## Features
 
 - Type-safe enum implementations
-- JSON, BSON and text marshaling/unmarshaling support
+- JSON, BSON, SQL and text marshaling/unmarshaling support
 - Case-sensitive or case-insensitive string representations
 - Panic-free parsing with error handling
 - Must-style parsing variants for convenience
