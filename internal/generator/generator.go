@@ -1,0 +1,308 @@
+// Package generator provides a code generator for enum types. It reads Go source files and extracts enum values
+// to generate a new type with json, bson and text marshaling support.
+package generator
+
+import (
+	"bytes"
+	"fmt"
+	"go/ast"
+	"go/format"
+	"go/parser"
+	"go/token"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"text/template"
+	"unicode"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
+)
+
+var titleCaser = cases.Title(language.English)
+
+// Generator holds the data needed for enum code generation
+type Generator struct {
+	Type      string         // the private type name (e.g., "status")
+	Path      string         // output directory path
+	values    map[string]int // const values found
+	pkgName   string         // package name from source file
+	lowerCase bool           // use lower case for marshal/unmarshal
+}
+
+// Value represents a single enum value
+type Value struct {
+	PrivateName string // e.g., "statusActive"
+	PublicName  string // e.g., "StatusActive"
+	Name        string // e.g., "Active"
+	Index       int    // enum index value
+}
+
+// New creates a new Generator instance
+func New(typeName, path string) (*Generator, error) {
+	if typeName == "" {
+		return nil, fmt.Errorf("type name is required")
+	}
+	if strings.ToLower(typeName) != typeName {
+		return nil, fmt.Errorf("type name must be lowercase (private)")
+	}
+
+	return &Generator{
+		Type:   typeName,
+		Path:   path,
+		values: make(map[string]int),
+	}, nil
+}
+
+// SetLowerCase sets the lower case flag for marshal/unmarshal values
+func (g *Generator) SetLowerCase(lower bool) {
+	g.lowerCase = lower
+}
+
+// Parse reads the source directory and extracts enum information. it looks for const values
+// that start with the enum type name, for example if type is "status", it will find all const values
+// that start with "status". The values must use iota and be in sequence. The values map will contain
+// the const name and its iota value, for example: {"statusActive": 1, "statusInactive": 2}
+func (g *Generator) Parse(dir string) error {
+	fset := token.NewFileSet()
+	pkgs, err := parser.ParseDir(fset, dir, nil, 0)
+	if err != nil {
+		return fmt.Errorf("failed to parse directory: %w", err)
+	}
+
+	for _, pkg := range pkgs {
+		g.pkgName = pkg.Name
+		for _, file := range pkg.Files {
+			ast.Inspect(file, func(n ast.Node) bool {
+				// find const blocks in AST
+				if decl, ok := n.(*ast.GenDecl); ok && decl.Tok == token.CONST {
+					var iotaVal int
+					for _, spec := range decl.Specs {
+						if vspec, ok := spec.(*ast.ValueSpec); ok {
+							// check if any const name starts with our type name
+							if len(vspec.Names) > 0 && strings.HasPrefix(vspec.Names[0].Name, g.Type) {
+								for _, name := range vspec.Names {
+									// skip placeholder values marked with _
+									if name.Name != "_" {
+										g.values[name.Name] = iotaVal
+										iotaVal++
+									}
+								}
+							}
+						}
+					}
+				}
+				return true
+			})
+		}
+	}
+
+	if len(g.values) == 0 {
+		return fmt.Errorf("no const values found for type %s", g.Type)
+	}
+
+	return nil
+}
+
+// Generate creates the enum code file. it takes the const values found in Parse and creates
+// a new type with json, bson and text marshaling support. the generated code includes:
+//   - exported type with private name and value fields (e.g., Status{name: "active", value: 1})
+//   - string representation (String method)
+//   - text marshaling (MarshalText/UnmarshalText methods)
+//   - parsing functions (Parse/Must variants)
+//   - exported const values (e.g., StatusActive)
+//   - helper functions to get all values and names
+func (g *Generator) Generate() error {
+	values := make([]Value, 0, len(g.values))
+	names := make([]string, 0, len(g.values))
+	// collect names for stable ordering
+	for name := range g.values {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	// create values with proper name transformations for each case
+	for _, name := range names {
+		privateName := name
+		// strip type prefix to get just the value name part (e.g., "Active" from "statusActive")
+		nameWithoutPrefix := strings.TrimPrefix(privateName, g.Type)
+		// create exported name by adding title-cased type (e.g., "StatusActive")
+		publicName := titleCaser.String(g.Type) + nameWithoutPrefix
+		values = append(values, Value{
+			PrivateName: privateName,
+			PublicName:  publicName,
+			Name:        titleCaser.String(nameWithoutPrefix),
+			Index:       g.values[name],
+		})
+	}
+
+	// determine output package name: use directory name if path is set
+	pkgName := g.pkgName
+	if g.Path != "" {
+		dir := filepath.Base(g.Path)
+		// ensure package name is a valid go identifier
+		if !isValidGoIdentifier(dir) {
+			pkgName = "enum" // fallback to a safe name
+		} else {
+			pkgName = dir
+		}
+	}
+
+	// prepare template data
+	data := struct {
+		Type      string
+		Values    []Value
+		Package   string
+		LowerCase bool
+	}{
+		Type:      g.Type,
+		Values:    values,
+		Package:   pkgName,
+		LowerCase: g.lowerCase,
+	}
+
+	// execute template
+	var buf bytes.Buffer
+	if err := enumTemplate.Execute(&buf, data); err != nil {
+		return fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	// format generated code
+	src, err := format.Source(buf.Bytes())
+	if err != nil {
+		return fmt.Errorf("failed to format source: %w", err)
+	}
+
+	// ensure output directory exists
+	if g.Path != "" {
+		if err := os.MkdirAll(g.Path, 0o700); err != nil {
+			return fmt.Errorf("failed to create output directory: %w", err)
+		}
+	}
+
+	// write generated code to file
+	outputName := filepath.Join(g.Path, g.Type+"_enum.go")
+	if err := os.WriteFile(outputName, src, 0o600); err != nil {
+		return fmt.Errorf("failed to write output file: %w", err)
+	}
+
+	return nil
+}
+
+// isValidGoIdentifier checks if a string is a valid Go identifier:
+// - must start with a letter or underscore
+// - can contain letters, digits, and underscores
+func isValidGoIdentifier(s string) bool {
+	if s == "" {
+		return false
+	}
+
+	for i, c := range s {
+		if i == 0 {
+			if !unicode.IsLetter(c) && c != '_' {
+				return false
+			}
+		} else {
+			if !unicode.IsLetter(c) && !unicode.IsDigit(c) && c != '_' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+var funcMap = template.FuncMap{
+	"title":   titleCaser.String,
+	"ToLower": strings.ToLower,
+}
+
+// template for the generated enum code, creates:
+// - exported type with name and value fields
+// - String method for fmt.Stringer
+// - Marshal/Unmarshal for JSON support
+// - Parse function with error handling
+// - Must variant that panics on error
+// - exported const values
+// - Values and Names helper functions
+var enumTemplate = template.Must(template.New("enum").Funcs(funcMap).Parse(`// Code generated by enumgen; DO NOT EDIT.
+
+package {{.Package}}
+
+import (
+	"fmt"
+)
+
+// {{.Type | title}} is the exported type for the enum
+type {{.Type | title}} struct {
+	name  string
+	value int
+}
+
+func (e {{.Type | title}}) String() string { return e.name }
+
+// MarshalText implements encoding.TextMarshaler
+func (e {{.Type | title}}) MarshalText() ([]byte, error) {
+	return []byte(e.name), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler
+func (e *{{.Type | title}}) UnmarshalText(text []byte) error {
+	var err error
+	*e, err = Parse{{.Type | title}}(string(text))
+	return err
+}
+
+// Parse{{.Type | title}} converts string to {{.Type}} enum value
+func Parse{{.Type | title}}(v string) ({{.Type | title}}, error) {
+{{if .LowerCase}}
+	switch v {
+	{{range .Values -}}
+	case "{{.Name | ToLower}}":
+		return {{.PublicName}}, nil
+	{{end}}
+	}
+{{else}}
+	switch strings.ToLower(v) {
+	{{range .Values -}}
+	case strings.ToLower("{{.Name}}"):
+		return {{.PublicName}}, nil
+	{{end}}
+	}
+{{end}}
+	return {{.Type | title}}{}, fmt.Errorf("invalid {{.Type}}: %s", v)
+}
+
+// Must{{.Type | title}} is like Parse{{.Type | title}} but panics if string is invalid
+func Must{{.Type | title}}(v string) {{.Type | title}} {
+	r, err := Parse{{.Type | title}}(v)
+	if err != nil {
+		panic(err)
+	}
+	return r
+}
+
+// Public constants for {{.Type}} values
+var (
+{{range .Values -}}
+	{{.PublicName}} = {{$.Type | title}}{name: "{{if $.LowerCase}}{{.Name | ToLower}}{{else}}{{.Name}}{{end}}", value: {{.Index}}}
+{{end -}}
+)
+
+// {{.Type | title}}Values returns all possible enum values
+func {{.Type | title}}Values() []{{.Type | title}} {
+	return []{{.Type | title}}{
+	{{range .Values -}}
+		{{.PublicName}},
+	{{end -}}
+	}
+}
+
+// {{.Type | title}}Names returns all possible enum names
+func {{.Type | title}}Names() []string {
+	return []string{
+	{{range .Values -}}
+		"{{if $.LowerCase}}{{.Name | ToLower}}{{else}}{{.Name}}{{end}}",
+	{{end -}}
+	}
+}`))
