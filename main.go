@@ -5,11 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime/debug"
 
 	"github.com/go-pkgz/enum/internal/generator"
 )
-
-var version = "dev"
 
 // allow mocking os.Exit in tests
 var osExit = os.Exit
@@ -22,13 +21,21 @@ func main() {
 	versionFlag := flag.Bool("version", false, "print version")
 	flag.Parse()
 
+	// collect build info (version), new in go 1.24
+	buildInfo := "dev"
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if info.Main.Version != "" {
+			buildInfo = info.Main.Version
+		}
+	}
+
 	if *helpFlag {
 		showUsage()
 		osExit(0)
 		return
 	}
 	if *versionFlag {
-		fmt.Printf("enum generator %s\n", version)
+		fmt.Printf("enum generator %s\n", buildInfo)
 		osExit(0)
 		return
 	}
