@@ -249,7 +249,6 @@ package {{.Package}}
 import (
 	"database/sql/driver"
 	"fmt"
-	"strings"
 )
 
 // {{.Type | title}} is the exported type for the enum

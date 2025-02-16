@@ -45,10 +45,9 @@ func TestGenerator(t *testing.T) {
 		content, err := os.ReadFile(genFile)
 		require.NoError(t, err)
 
-		// all required imports are present
+		// check required imports
 		assert.Contains(t, string(content), `"database/sql/driver"`)
 		assert.Contains(t, string(content), `"fmt"`)
-		assert.Contains(t, string(content), `"strings"`)
 
 		// check required type definition
 		assert.Contains(t, string(content), "type Status struct {")
