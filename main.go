@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/go-pkgz/enum/internal/generator"
+	"runtime/debug"
 )
 
 var version = "dev"
@@ -15,6 +16,10 @@ var version = "dev"
 var osExit = os.Exit
 
 func main() {
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "(devel)" && bi.Main.Version != "" {
+		version = bi.Main.Version
+	}
+
 	typeFlag := flag.String("type", "", "type name (must be lowercase)")
 	pathFlag := flag.String("path", "", "output directory path (default: same as source)")
 	lowerFlag := flag.Bool("lower", false, "use lower case for marshaled/unmarshaled values")
@@ -33,7 +38,7 @@ func main() {
 		return
 	}
 
-	gen, err := generator.New(*typeFlag, *pathFlag)
+	gen, err := generator.New(version, *typeFlag, *pathFlag)
 	if err != nil {
 		fmt.Printf("%v\n", err)
 		showUsage()
