@@ -3,6 +3,7 @@
 package status
 
 import (
+	"database/sql/driver"
 	"fmt"
 )
 
@@ -24,6 +25,36 @@ func (e *Status) UnmarshalText(text []byte) error {
 	var err error
 	*e, err = ParseStatus(string(text))
 	return err
+}
+
+// Value implements the driver.Valuer interface
+func (e Status) Value() (driver.Value, error) {
+	return e.name, nil
+}
+
+// Scan implements the sql.Scanner interface
+func (e *Status) Scan(value interface{}) error {
+	if value == nil {
+		*e = StatusValues()[0]
+		return nil
+	}
+
+	str, ok := value.(string)
+	if !ok {
+		if b, ok := value.([]byte); ok {
+			str = string(b)
+		} else {
+			return fmt.Errorf("invalid status value: %v", value)
+		}
+	}
+
+	val, err := ParseStatus(str)
+	if err != nil {
+		return err
+	}
+
+	*e = val
+	return nil
 }
 
 // ParseStatus converts string to status enum value
