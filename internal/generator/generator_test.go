@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"text/template"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -159,6 +160,37 @@ func TestGenerator(t *testing.T) {
 		err = gen.Parse("../testdata")
 		assert.Error(t, err)
 	})
+
+	t.Run("invalid package", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		err := os.WriteFile(filepath.Join(tmpDir, "invalid.go"), []byte(`invalid go file`), 0o600)
+		require.NoError(t, err)
+
+		gen, err := New("status", tmpDir)
+		require.NoError(t, err)
+
+		err = gen.Parse(tmpDir)
+		assert.Error(t, err)
+	})
+
+	t.Run("non-existent directory", func(t *testing.T) {
+		gen, err := New("status", "")
+		require.NoError(t, err)
+
+		err = gen.Parse("non-existent-dir")
+		assert.Error(t, err)
+	})
+
+	t.Run("invalid output directory", func(t *testing.T) {
+		gen, err := New("status", "/non-existent-dir")
+		require.NoError(t, err)
+
+		err = gen.Parse("testdata")
+		require.NoError(t, err)
+
+		err = gen.Generate()
+		assert.Error(t, err)
+	})
 }
 
 func TestGeneratorValues(t *testing.T) {
@@ -249,5 +281,97 @@ func TestGeneratorLowerCase(t *testing.T) {
 		assert.Contains(t, string(content), `name: "Active"`)
 		assert.Contains(t, string(content), `name: "Blocked"`)
 		assert.Contains(t, string(content), "strings.ToLower")
+	})
+}
+
+func TestGeneratorEdgeCases(t *testing.T) {
+	t.Run("invalid template", func(t *testing.T) {
+		// Create a generator with a broken template that will fail to execute
+		gen, err := New("status", "")
+		require.NoError(t, err)
+
+		// Override template with invalid one
+		origTmpl := enumTemplate
+		defer func() { enumTemplate = origTmpl }()
+		enumTemplate = template.Must(template.New("broken").Parse("{{.Unknown}}")) // will fail on execution
+
+		err = gen.Parse("testdata")
+		require.NoError(t, err)
+
+		err = gen.Generate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to execute template")
+	})
+
+	t.Run("format error", func(t *testing.T) {
+		gen, err := New("status", "")
+		require.NoError(t, err)
+
+		// Override template to generate invalid Go code
+		origTmpl := enumTemplate
+		defer func() { enumTemplate = origTmpl }()
+		enumTemplate = template.Must(template.New("invalid").Parse("invalid go code"))
+
+		err = gen.Parse("testdata")
+		require.NoError(t, err)
+
+		err = gen.Generate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to format source")
+	})
+
+	t.Run("invalid identifier", func(t *testing.T) {
+		tests := []struct {
+			name     string
+			input    string
+			expected bool
+		}{
+			{"empty", "", false},
+			{"starts with number", "123abc", false},
+			{"valid", "abc123", true},
+			{"valid with underscore", "abc_123", true},
+			{"starts with underscore", "_abc123", true},
+		}
+
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				assert.Equal(t, tc.expected, isValidGoIdentifier(tc.input))
+			})
+		}
+	})
+}
+
+func TestParseSpecialCases(t *testing.T) {
+	t.Run("empty const block", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		err := os.WriteFile(filepath.Join(tmpDir, "empty.go"), []byte(`
+package test
+const (
+)
+`), 0o644)
+		require.NoError(t, err)
+
+		gen, err := New("status", "")
+		require.NoError(t, err)
+
+		err = gen.Parse(tmpDir)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no const values found for type status")
+	})
+
+	t.Run("const without values", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		err := os.WriteFile(filepath.Join(tmpDir, "no_values.go"), []byte(`
+package test
+const name string
+`), 0o644)
+		require.NoError(t, err)
+
+		gen, err := New("status", "")
+		require.NoError(t, err)
+
+		err = gen.Parse(tmpDir)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no const values found for type status")
 	})
 }
