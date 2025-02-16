@@ -28,6 +28,10 @@ jobs:
           cat $GITHUB_WORKSPACE/profile.cov_tmp | grep -v "_mock.go" > $GITHUB_WORKSPACE/profile.cov
           go build -race
 
+      - name: test examples
+        run: |
+          go test ./_examples/... -timeout=60s -race
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
         with:
