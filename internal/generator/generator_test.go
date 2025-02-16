@@ -1,6 +1,8 @@
 package generator
 
 import (
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,6 +12,7 @@ import (
 )
 
 func TestGenerator(t *testing.T) {
+
 	t.Run("validation", func(t *testing.T) {
 		_, err := New("", "")
 		require.Error(t, err, "empty type name should fail")
@@ -20,6 +23,53 @@ func TestGenerator(t *testing.T) {
 		gen, err := New("status", "")
 		require.NoError(t, err)
 		assert.NotNil(t, gen)
+
+		// check if generated code is valid Go code
+		tmpDir := t.TempDir()
+		gen, err = New("status", tmpDir)
+		require.NoError(t, err)
+
+		err = gen.Parse("testdata")
+		require.NoError(t, err)
+
+		err = gen.Generate()
+		require.NoError(t, err)
+
+		// try to parse generated code
+		fset := token.NewFileSet()
+		genFile := filepath.Join(tmpDir, "status_enum.go")
+		_, err = parser.ParseFile(fset, genFile, nil, parser.AllErrors)
+		require.NoError(t, err, "generated code should be valid Go code")
+
+		// validate default values correctness
+		content, err := os.ReadFile(genFile)
+		require.NoError(t, err)
+
+		// all required imports are present
+		assert.Contains(t, string(content), `"database/sql/driver"`)
+		assert.Contains(t, string(content), `"fmt"`)
+		assert.Contains(t, string(content), `"strings"`)
+
+		// check required type definition
+		assert.Contains(t, string(content), "type Status struct {")
+		assert.Contains(t, string(content), "name  string")
+		assert.Contains(t, string(content), "value int")
+
+		// check all required methods are present
+		methods := []string{
+			"String() string",
+			"MarshalText() ([]byte, error)",
+			"UnmarshalText(text []byte) error",
+			"Value() (driver.Value, error)",
+			"Scan(value interface{}) error",
+			"ParseStatus(v string) (Status, error)",
+			"MustStatus(v string) Status",
+			"StatusValues() []Status",
+			"StatusNames() []string",
+		}
+		for _, method := range methods {
+			assert.Contains(t, string(content), method, "method %s should be present", method)
+		}
 	})
 
 	t.Run("parse and generate", func(t *testing.T) {
@@ -46,6 +96,61 @@ func TestGenerator(t *testing.T) {
 		assert.Contains(t, string(content), "StatusActive")
 		assert.Contains(t, string(content), "StatusInactive")
 		assert.Contains(t, string(content), "StatusBlocked")
+	})
+
+	t.Run("sql support", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		gen, err := New("status", tmpDir)
+		require.NoError(t, err)
+
+		err = gen.Parse("testdata")
+		require.NoError(t, err)
+
+		err = gen.Generate()
+		require.NoError(t, err)
+
+		content, err := os.ReadFile(filepath.Join(tmpDir, "status_enum.go"))
+		require.NoError(t, err)
+
+		// verify sql interface implementations are present
+		assert.Contains(t, string(content), "func (e Status) Value() (driver.Value, error)")
+		assert.Contains(t, string(content), "func (e *Status) Scan(value interface{}) error")
+
+		// verify sql imports
+		assert.Contains(t, string(content), `"database/sql/driver"`)
+
+		// verify nil handling
+		assert.Contains(t, string(content), "if value == nil {")
+		assert.Contains(t, string(content), "StatusValues()[0]")
+
+		// verify []byte support
+		assert.Contains(t, string(content), "if b, ok := value.([]byte)")
+	})
+
+	t.Run("json support", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		gen, err := New("status", tmpDir)
+		require.NoError(t, err)
+
+		err = gen.Parse("testdata")
+		require.NoError(t, err)
+
+		err = gen.Generate()
+		require.NoError(t, err)
+
+		content, err := os.ReadFile(filepath.Join(tmpDir, "status_enum.go"))
+		require.NoError(t, err)
+
+		// verify text marshaling interface implementations are present (used by json)
+		assert.Contains(t, string(content), "func (e Status) MarshalText() ([]byte, error)")
+		assert.Contains(t, string(content), "func (e *Status) UnmarshalText(text []byte) error")
+
+		// verify proper error handling in unmarshal
+		assert.Contains(t, string(content), "invalid status value: %v")
+		assert.Contains(t, string(content), "ParseStatus(string(text))")
+
+		// verify string conversion in marshal
+		assert.Contains(t, string(content), "return []byte(e.name), nil")
 	})
 
 	t.Run("missing type", func(t *testing.T) {

@@ -122,10 +122,11 @@ func (g *Generator) parseFile(file *ast.File) {
 }
 
 // Generate creates the enum code file. it takes the const values found in Parse and creates
-// a new type with json, bson and text marshaling support. the generated code includes:
+// a new type with json, sql and text marshaling support. the generated code includes:
 //   - exported type with private name and value fields (e.g., Status{name: "active", value: 1})
 //   - string representation (String method)
 //   - text marshaling (MarshalText/UnmarshalText methods)
+//   - sql marshaling (Value/Scan methods for driver.Valuer and sql.Scanner)
 //   - parsing functions (Parse/Must variants)
 //   - exported const values (e.g., StatusActive)
 //   - helper functions to get all values and names
@@ -246,7 +247,9 @@ var enumTemplate = template.Must(template.New("enum").Funcs(funcMap).Parse(`// C
 package {{.Package}}
 
 import (
+	"database/sql/driver"
 	"fmt"
+	"strings"
 )
 
 // {{.Type | title}} is the exported type for the enum
@@ -267,6 +270,36 @@ func (e *{{.Type | title}}) UnmarshalText(text []byte) error {
 	var err error
 	*e, err = Parse{{.Type | title}}(string(text))
 	return err
+}
+
+// Value implements the driver.Valuer interface
+func (e {{.Type | title}}) Value() (driver.Value, error) {
+	return e.name, nil
+}
+
+// Scan implements the sql.Scanner interface
+func (e *{{.Type | title}}) Scan(value interface{}) error {
+	if value == nil {
+		*e = {{.Type | title}}Values()[0]
+		return nil
+	}
+
+	str, ok := value.(string)
+	if !ok {
+		if b, ok := value.([]byte); ok {
+			str = string(b)
+		} else {
+			return fmt.Errorf("invalid {{.Type}} value: %v", value)
+		}
+	}
+
+	val, err := Parse{{.Type | title}}(str)
+	if err != nil {
+		return err
+	}
+
+	*e = val
+	return nil
 }
 
 // Parse{{.Type | title}} converts string to {{.Type}} enum value
