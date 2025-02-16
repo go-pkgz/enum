@@ -246,8 +246,9 @@ var enumTemplate = template.Must(template.New("enum").Funcs(funcMap).Parse(`// C
 package {{.Package}}
 
 import (
-	"database/sql/driver"
 	"fmt"
+
+	"database/sql/driver"
 )
 
 // {{.Type | title}} is the exported type for the enum

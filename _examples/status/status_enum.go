@@ -2,8 +2,9 @@
 package status
 
 import (
-	"database/sql/driver"
 	"fmt"
+
+	"database/sql/driver"
 )
 
 // Status is the exported type for the enum
