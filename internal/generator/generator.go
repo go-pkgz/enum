@@ -71,30 +71,11 @@ func (g *Generator) Parse(dir string) error {
 		return fmt.Errorf("failed to parse directory: %w", err)
 	}
 
+	// process each package
 	for _, pkg := range pkgs {
 		g.pkgName = pkg.Name
 		for _, file := range pkg.Files {
-			ast.Inspect(file, func(n ast.Node) bool {
-				// find const blocks in AST
-				if decl, ok := n.(*ast.GenDecl); ok && decl.Tok == token.CONST {
-					var iotaVal int
-					for _, spec := range decl.Specs {
-						if vspec, ok := spec.(*ast.ValueSpec); ok {
-							// check if any const name starts with our type name
-							if len(vspec.Names) > 0 && strings.HasPrefix(vspec.Names[0].Name, g.Type) {
-								for _, name := range vspec.Names {
-									// skip placeholder values marked with _
-									if name.Name != "_" {
-										g.values[name.Name] = iotaVal
-										iotaVal++
-									}
-								}
-							}
-						}
-					}
-				}
-				return true
-			})
+			g.parseFile(file)
 		}
 	}
 
@@ -103,6 +84,41 @@ func (g *Generator) Parse(dir string) error {
 	}
 
 	return nil
+}
+
+// parseFile processes a single file for enum declarations
+func (g *Generator) parseFile(file *ast.File) {
+
+	parseConstBlock := func(decl *ast.GenDecl) {
+		// extracts enum values from a const block
+		var iotaVal int
+		for _, spec := range decl.Specs {
+			vspec, ok := spec.(*ast.ValueSpec)
+			if !ok || len(vspec.Names) == 0 {
+				continue
+			}
+
+			// check if first name has our type prefix
+			if !strings.HasPrefix(vspec.Names[0].Name, g.Type) {
+				continue
+			}
+
+			// process all names in this const group
+			for _, name := range vspec.Names {
+				if name.Name != "_" { // skip placeholder values
+					g.values[name.Name] = iotaVal
+					iotaVal++
+				}
+			}
+		}
+	}
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		if decl, ok := n.(*ast.GenDecl); ok && decl.Tok == token.CONST {
+			parseConstBlock(decl)
+		}
+		return true
+	})
 }
 
 // Generate creates the enum code file. it takes the const values found in Parse and creates
