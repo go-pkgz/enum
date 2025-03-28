@@ -25,6 +25,10 @@ func TestGenerator(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotNil(t, gen)
 
+		gen, err = New("moreComplexType", "")
+		require.NoError(t, err)
+		assert.NotNil(t, gen)
+
 		// check if generated code is valid Go code
 		tmpDir := t.TempDir()
 		gen, err = New("status", tmpDir)
@@ -96,6 +100,32 @@ func TestGenerator(t *testing.T) {
 		assert.Contains(t, string(content), "StatusActive")
 		assert.Contains(t, string(content), "StatusInactive")
 		assert.Contains(t, string(content), "StatusBlocked")
+	})
+
+	t.Run("parse and generate with complex name", func(t *testing.T) {
+		// create temp dir for output
+		tmpDir := t.TempDir()
+
+		gen, err := New("jobStatus", tmpDir)
+		require.NoError(t, err)
+
+		// parse testdata
+		err = gen.Parse("testdata")
+		require.NoError(t, err)
+
+		// generate
+		err = gen.Generate()
+		require.NoError(t, err)
+
+		// verify file was created
+		content, err := os.ReadFile(filepath.Join(tmpDir, "job_status_enum.go"))
+		require.NoError(t, err)
+
+		// check content
+		assert.Contains(t, string(content), "type JobStatus struct")
+		assert.Contains(t, string(content), "JobStatusActive")
+		assert.Contains(t, string(content), "JobStatusInactive")
+		assert.Contains(t, string(content), "JobStatusBlocked")
 	})
 
 	t.Run("sql support", func(t *testing.T) {
@@ -374,4 +404,42 @@ const name string
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "no const values found for type status")
 	})
+}
+
+func TestSplitCamelCase(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected []string
+	}{
+		{"", []string{""}},
+		{"status", []string{"status"}},
+		{"internalIPAddress", []string{"internal", "IP", "Address"}},
+		{"internalIP", []string{"internal", "IP"}},
+		{"HTTP", []string{"HTTP"}},
+		{"HTTPResponseCode", []string{"HTTP", "Response", "Code"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			result := splitCamelCase(test.input)
+			assert.Equal(t, test.expected, result)
+		})
+	}
+}
+
+func TestGetFileNameForType(t *testing.T) {
+	tests := []struct {
+		typeName string
+		expected string
+	}{
+		{"status", "status_enum.go"},
+		{"jobStatus", "job_status_enum.go"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.typeName, func(t *testing.T) {
+			result := getFileNameForType(test.typeName)
+			assert.Equal(t, test.expected, result)
+		})
+	}
 }
