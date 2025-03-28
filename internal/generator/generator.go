@@ -249,6 +249,9 @@ import (
 	"fmt"
 
 	"database/sql/driver"
+	{{- if .LowerCase | not }}
+	"strings"
+	{{- end}}
 )
 
 // {{.Type | title}} is the exported type for the enum
