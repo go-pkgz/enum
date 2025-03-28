@@ -20,7 +20,7 @@ import (
 	"golang.org/x/text/language"
 )
 
-var titleCaser = cases.Title(language.English)
+var titleCaser = cases.Title(language.English, cases.NoLower)
 
 // Generator holds the data needed for enum code generation
 type Generator struct {
@@ -44,8 +44,8 @@ func New(typeName, path string) (*Generator, error) {
 	if typeName == "" {
 		return nil, fmt.Errorf("type name is required")
 	}
-	if strings.ToLower(typeName) != typeName {
-		return nil, fmt.Errorf("type name must be lowercase (private)")
+	if !unicode.IsLower(rune(typeName[0])) {
+		return nil, fmt.Errorf("first letter must be lowercase (private)")
 	}
 
 	return &Generator{
@@ -199,12 +199,57 @@ func (g *Generator) Generate() error {
 	}
 
 	// write generated code to file
-	outputName := filepath.Join(g.Path, g.Type+"_enum.go")
+	outputName := filepath.Join(g.Path, getFileNameForType(g.Type))
 	if err := os.WriteFile(outputName, src, 0o600); err != nil {
 		return fmt.Errorf("failed to write output file: %w", err)
 	}
 
 	return nil
+}
+
+// splitCamelCase splits a camel case string into words, it handles the sequential abbreviations
+// and acronyms by treating them as single words.
+// For example:
+// "jobStatus" becomes ["job", "Status"].
+// "internalIPAddress" becomes ["internal", "IP", "Address"].
+// "internalIP" becomes ["internal", "IP"].
+// "HTTPResponse" becomes ["HTTP", "Response"].
+// "HTTP" is not split further.
+func splitCamelCase(s string) []string {
+	var words []string
+	start := 0
+	var prev rune
+	for i, curr := range s {
+		if i == 0 {
+			prev = curr
+			continue
+		}
+		var next *rune
+		if i+1 < len(s) {
+			nextr := rune(s[i+1])
+			next = &nextr
+		}
+		if (unicode.IsLower(prev) && unicode.IsUpper(curr)) ||
+			(unicode.IsUpper(curr) && (next != nil && unicode.IsLower(*next))) {
+			words = append(words, s[start:i])
+			start = i
+		}
+		prev = curr
+	}
+	words = append(words, s[start:])
+	return words
+}
+
+// getFileNameForType returns the file name for the generated enum code based on the type name.
+// It converts the type name to snake case and appends "_enum.go" to it.
+// For example, if the type name is "JobStatus", the file name will be "job_status_enum.go".
+func getFileNameForType(typeName string) string {
+	words := splitCamelCase(typeName)
+	for i := range words {
+		words[i] = strings.ToLower(words[i])
+	}
+
+	return strings.Join(words, "_") + "_enum.go"
 }
 
 // isValidGoIdentifier checks if a string is a valid Go identifier:
