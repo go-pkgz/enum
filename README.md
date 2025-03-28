@@ -86,7 +86,7 @@ go generate ./...
 
 ### Generator Options
 
-- `-type` (required): the name of the type to generate enum for (must be lowercase)
+- `-type` (required): the name of the type to generate enum for (must be private)
 - `-path`: output directory path (default: same as source)
 - `-lower`: use lowercase for marshaled/unmarshaled values
 - `-version`: print version information
