@@ -15,6 +15,7 @@ import (
 	"strings"
 	"text/template"
 	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -224,9 +225,10 @@ func splitCamelCase(s string) []string {
 			prev = curr
 			continue
 		}
+		_, width := utf8.DecodeRuneInString(s[i:])
 		var next *rune
-		if i+1 < len(s) {
-			nextr := rune(s[i+1])
+		if i+width < len(s) {
+			nextr, _ := utf8.DecodeRuneInString(s[i+width:])
 			next = &nextr
 		}
 		if (unicode.IsLower(prev) && unicode.IsUpper(curr)) ||
@@ -242,7 +244,7 @@ func splitCamelCase(s string) []string {
 
 // getFileNameForType returns the file name for the generated enum code based on the type name.
 // It converts the type name to snake case and appends "_enum.go" to it.
-// For example, if the type name is "JobStatus", the file name will be "job_status_enum.go".
+// For example, if the type name is "jobStatus", the file name will be "job_status_enum.go".
 func getFileNameForType(typeName string) string {
 	words := splitCamelCase(typeName)
 	for i := range words {
