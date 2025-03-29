@@ -89,6 +89,17 @@ func Must{{.Type | title}}(v string) {{.Type | title}} {
 	return r
 }
 
+// Get{{.Type | title}} gets the correspondent {{.Type}} enum value
+func Get{{.Type | title}}(v int) ({{.Type | title}}, error) {
+	switch v {
+	{{range .Values -}}
+	case {{.Index}}:
+		return {{.PublicName}}, nil
+	{{end -}}
+	}
+	return {{.Type | title}}{}, fmt.Errorf("invalid {{.Type}} value: %d", v)
+}
+
 // Public constants for {{.Type}} values
 var (
 {{range .Values -}}

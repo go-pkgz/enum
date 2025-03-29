@@ -100,6 +100,7 @@ The generator creates a new type with the following features:
 - Text marshaling (implements `encoding.TextMarshaler` and `encoding.TextUnmarshaler`)
 - Parse function with error handling (`ParseStatus`)
 - Must-style parse function that panics on error (`MustStatus`)
+- Get function with error handling (`GetStatus`)
 - All possible values slice (`StatusValues`)
 - All possible names slice (`StatusNames`)
 - Public constants for each value (`StatusActive`, `StatusInactive`, etc.)
