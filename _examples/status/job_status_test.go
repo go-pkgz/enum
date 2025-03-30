@@ -112,5 +112,5 @@ func TestJobStatus(t *testing.T) {
 func ExampleJobStatus() {
 	s := JobStatusActive
 	fmt.Println(s.String())
-	// Output: active
+	// output: active
 }
