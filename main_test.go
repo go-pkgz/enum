@@ -20,7 +20,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestIntegration(t *testing.T) {
-	// Reset flags between runs to avoid "flag redefined" error
+	// reset flags between runs to avoid "flag redefined" error
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
 	t.Run("generate enum", func(t *testing.T) {
@@ -69,7 +69,7 @@ const (
 	})
 
 	t.Run("lower case", func(t *testing.T) {
-		// Reset flags for this run
+		// reset flags for this run
 		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
 		origArgs := os.Args
@@ -108,7 +108,7 @@ const (
 	})
 
 	t.Run("version", func(t *testing.T) {
-		// Reset flags for this run
+		// reset flags for this run
 		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
 		origArgs := os.Args
@@ -123,7 +123,7 @@ const (
 	})
 
 	t.Run("help", func(t *testing.T) {
-		// Reset flags for this run
+		// reset flags for this run
 		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
 		origArgs := os.Args
@@ -138,7 +138,7 @@ const (
 	})
 
 	t.Run("missing type", func(t *testing.T) {
-		// Reset flags for this run
+		// reset flags for this run
 		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
 		origArgs := os.Args
@@ -153,7 +153,7 @@ const (
 	})
 
 	t.Run("uppercase type", func(t *testing.T) {
-		// Reset flags for this run
+		// reset flags for this run
 		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
 		origArgs := os.Args

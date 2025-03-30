@@ -112,5 +112,5 @@ func TestStatus(t *testing.T) {
 func ExampleStatus() {
 	s := StatusActive
 	fmt.Println(s.String())
-	// Output: active
+	// output: active
 }

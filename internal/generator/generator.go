@@ -95,6 +95,7 @@ func (g *Generator) parseFile(file *ast.File) {
 		// extracts enum values from a const block
 		var iotaVal int
 		var lastExprWasIota bool
+		var lastExplicitVal int
 
 		for _, spec := range decl.Specs {
 			vspec, ok := spec.(*ast.ValueSpec)
@@ -113,24 +114,32 @@ func (g *Generator) parseFile(file *ast.File) {
 					continue
 				}
 
-				// If there's a value expression, try to extract the actual value
-				if i < len(vspec.Values) && vspec.Values[i] != nil {
-					// Check if the expression is an iota identifier
-					if ident, ok := vspec.Values[i].(*ast.Ident); ok && ident.Name == "iota" {
-						g.values[name.Name] = iotaVal
-						lastExprWasIota = true
-					} else {
-						// Try to extract literal value
-						if basicLit, ok := vspec.Values[i].(*ast.BasicLit); ok {
-							if val, err := convertLiteralToInt(basicLit); err == nil {
-								g.values[name.Name] = val
-								lastExprWasIota = false
-							}
+				// process value based on expression
+				switch {
+				case i < len(vspec.Values) && vspec.Values[i] != nil:
+					// there's a value expression, try to extract the actual value
+					switch expr := vspec.Values[i].(type) {
+					case *ast.Ident:
+						if expr.Name == "iota" {
+							// the expression is an iota identifier
+							g.values[name.Name] = iotaVal
+							lastExprWasIota = true
+						}
+					case *ast.BasicLit:
+						// try to extract literal value
+						if val, err := convertLiteralToInt(expr); err == nil {
+							g.values[name.Name] = val
+							lastExplicitVal = val
+							lastExprWasIota = false
 						}
 					}
-				} else if lastExprWasIota {
-					// If previous expr was iota and this one has no value, assume iota continues
+				case lastExprWasIota:
+					// if previous expr was iota and this one has no value, assume iota continues
 					g.values[name.Name] = iotaVal
+				default:
+					// if this constant omits its expression following a non-iota value,
+					// it repeats the previous expression (which means it gets the same value)
+					g.values[name.Name] = lastExplicitVal
 				}
 
 				iotaVal++
