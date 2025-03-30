@@ -195,14 +195,24 @@ func (g *Generator) Generate() error {
 
 	// ensure output directory exists
 	if g.Path != "" {
-		if err := os.MkdirAll(g.Path, 0o700); err != nil {
+		// get source directory permissions or use 0o755 as fallback
+		dirPerm := os.FileMode(0o755)
+		if info, err := os.Stat(filepath.Dir(g.Path)); err == nil && info.IsDir() {
+			dirPerm = info.Mode().Perm()
+		}
+
+		if err := os.MkdirAll(g.Path, dirPerm); err != nil {
 			return fmt.Errorf("failed to create output directory: %w", err)
 		}
 	}
 
 	// write generated code to file
 	outputName := filepath.Join(g.Path, getFileNameForType(g.Type))
-	if err := os.WriteFile(outputName, src, 0o600); err != nil {
+
+	// use source file permissions or 0o644 as fallback
+	filePerm := os.FileMode(0o644)
+
+	if err := os.WriteFile(outputName, src, filePerm); err != nil {
 		return fmt.Errorf("failed to write output file: %w", err)
 	}
 
