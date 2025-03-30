@@ -89,6 +89,7 @@ go generate ./...
 - `-type` (required): the name of the type to generate enum for (must be private)
 - `-path`: output directory path (default: same as source)
 - `-lower`: use lowercase for marshaled/unmarshaled values
+- `-getter`: Additionally generates a getter function for enum values. The `-getter` flag requires enum values to be unique to prevent undefined behavior.
 - `-version`: print version information
 - `-help`: show usage information
 
@@ -100,10 +101,11 @@ The generator creates a new type with the following features:
 - Text marshaling (implements `encoding.TextMarshaler` and `encoding.TextUnmarshaler`)
 - Parse function with error handling (`ParseStatus`)
 - Must-style parse function that panics on error (`MustStatus`)
-- Get function with error handling (`GetStatus`)
 - All possible values slice (`StatusValues`)
 - All possible names slice (`StatusNames`)
 - Public constants for each value (`StatusActive`, `StatusInactive`, etc.)
+
+Additionally, if the `-getter` flag is set, a getter function (`GetStatus`) will be generated. This function allows retrieving an enum value by its raw integer value.
 
 ### Case Sensitivity
 

@@ -17,6 +17,7 @@ func main() {
 	typeFlag := flag.String("type", "", "type name (must be lowercase)")
 	pathFlag := flag.String("path", "", "output directory path (default: same as source)")
 	lowerFlag := flag.Bool("lower", false, "use lower case for marshaled/unmarshaled values")
+	getterFlag := flag.Bool("getter", false, "generate getter methods for enum values")
 	helpFlag := flag.Bool("help", false, "show usage")
 	versionFlag := flag.Bool("version", false, "print version")
 	flag.Parse()
@@ -49,6 +50,7 @@ func main() {
 	}
 
 	gen.SetLowerCase(*lowerFlag)
+	gen.SetGenerateGetter(*getterFlag)
 
 	if err := gen.Parse("."); err != nil {
 		fmt.Printf("%v\n", err)

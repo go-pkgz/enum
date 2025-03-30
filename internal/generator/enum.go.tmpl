@@ -89,6 +89,7 @@ func Must{{.Type | title}}(v string) {{.Type | title}} {
 	return r
 }
 
+{{if .GenerateGetter -}}
 // Get{{.Type | title}} gets the correspondent {{.Type}} enum value
 func Get{{.Type | title}}(v int) ({{.Type | title}}, error) {
 	switch v {
@@ -99,6 +100,7 @@ func Get{{.Type | title}}(v int) ({{.Type | title}}, error) {
 	}
 	return {{.Type | title}}{}, fmt.Errorf("invalid {{.Type}} value: %d", v)
 }
+{{end -}}
 
 // Public constants for {{.Type}} values
 var (

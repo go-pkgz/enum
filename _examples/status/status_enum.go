@@ -84,21 +84,6 @@ func MustStatus(v string) Status {
 	return r
 }
 
-// GetStatus gets the correspondent status enum value
-func GetStatus(v int) (Status, error) {
-	switch v {
-	case 1:
-		return StatusActive, nil
-	case 3:
-		return StatusBlocked, nil
-	case 2:
-		return StatusInactive, nil
-	case 0:
-		return StatusUnknown, nil
-	}
-	return Status{}, fmt.Errorf("invalid status value: %d", v)
-}
-
 // Public constants for status values
 var (
 	StatusActive   = Status{name: "active", value: 1}

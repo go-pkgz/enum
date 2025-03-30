@@ -5,6 +5,7 @@ package generator
 import (
 	"bytes"
 	_ "embed"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -26,11 +27,12 @@ var titleCaser = cases.Title(language.English, cases.NoLower)
 
 // Generator holds the data needed for enum code generation
 type Generator struct {
-	Type      string         // the private type name (e.g., "status")
-	Path      string         // output directory path
-	values    map[string]int // const values found
-	pkgName   string         // package name from source file
-	lowerCase bool           // use lower case for marshal/unmarshal
+	Type           string         // the private type name (e.g., "status")
+	Path           string         // output directory path
+	values         map[string]int // const values found
+	pkgName        string         // package name from source file
+	lowerCase      bool           // use lower case for marshal/unmarshal
+	generateGetter bool           // generate getter methods for enum values
 }
 
 // Value represents a single enum value
@@ -60,6 +62,11 @@ func New(typeName, path string) (*Generator, error) {
 // SetLowerCase sets the lower case flag for marshal/unmarshal values
 func (g *Generator) SetLowerCase(lower bool) {
 	g.lowerCase = lower
+}
+
+// SetGenerateGetter sets the flag to generate getter methods for enum values
+func (g *Generator) SetGenerateGetter(generate bool) {
+	g.generateGetter = generate
 }
 
 // Parse reads the source directory and extracts enum information. it looks for const values
@@ -181,6 +188,28 @@ func convertLiteralToInt(lit *ast.BasicLit) (int, error) {
 func (g *Generator) Generate() error {
 	values := make([]Value, 0, len(g.values))
 	names := make([]string, 0, len(g.values))
+	// To avoid an undefined behavior for a Getter, we need to check if the values are unique
+	if g.generateGetter {
+		valuesCounter := make(map[int][]string)
+		// check if multiple names exist for the same value
+		for name, val := range g.values {
+			if _, ok := valuesCounter[val]; !ok {
+				valuesCounter[val] = []string{}
+			}
+			valuesCounter[val] = append(valuesCounter[val], name)
+		}
+		var errs []error
+		for val, names := range valuesCounter {
+			if len(names) > 1 {
+				errs = append(
+					errs, fmt.Errorf("multiple names for value %d: %s", val, strings.Join(names, ", ")),
+				)
+			}
+		}
+		if len(errs) > 0 {
+			return errors.Join(errs...)
+		}
+	}
 	// collect names for stable ordering
 	for name := range g.values {
 		names = append(names, name)
@@ -216,15 +245,17 @@ func (g *Generator) Generate() error {
 
 	// prepare template data
 	data := struct {
-		Type      string
-		Values    []Value
-		Package   string
-		LowerCase bool
+		Type           string
+		Values         []Value
+		Package        string
+		LowerCase      bool
+		GenerateGetter bool
 	}{
-		Type:      g.Type,
-		Values:    values,
-		Package:   pkgName,
-		LowerCase: g.lowerCase,
+		Type:           g.Type,
+		Values:         values,
+		Package:        pkgName,
+		LowerCase:      g.lowerCase,
+		GenerateGetter: g.generateGetter,
 	}
 
 	// execute template
