@@ -94,6 +94,8 @@ func (g *Generator) parseFile(file *ast.File) {
 	parseConstBlock := func(decl *ast.GenDecl) {
 		// extracts enum values from a const block
 		var iotaVal int
+		var lastExprWasIota bool
+
 		for _, spec := range decl.Specs {
 			vspec, ok := spec.(*ast.ValueSpec)
 			if !ok || len(vspec.Names) == 0 {
@@ -105,12 +107,33 @@ func (g *Generator) parseFile(file *ast.File) {
 				continue
 			}
 
-			// process all names in this const group
-			for _, name := range vspec.Names {
-				if name.Name != "_" { // skip placeholder values
-					g.values[name.Name] = iotaVal
-					iotaVal++
+			// process all names in this spec
+			for i, name := range vspec.Names {
+				if name.Name == "_" { // skip placeholder values
+					continue
 				}
+
+				// If there's a value expression, try to extract the actual value
+				if i < len(vspec.Values) && vspec.Values[i] != nil {
+					// Check if the expression is an iota identifier
+					if ident, ok := vspec.Values[i].(*ast.Ident); ok && ident.Name == "iota" {
+						g.values[name.Name] = iotaVal
+						lastExprWasIota = true
+					} else {
+						// Try to extract literal value
+						if basicLit, ok := vspec.Values[i].(*ast.BasicLit); ok {
+							if val, err := convertLiteralToInt(basicLit); err == nil {
+								g.values[name.Name] = val
+								lastExprWasIota = false
+							}
+						}
+					}
+				} else if lastExprWasIota {
+					// If previous expr was iota and this one has no value, assume iota continues
+					g.values[name.Name] = iotaVal
+				}
+
+				iotaVal++
 			}
 		}
 	}
@@ -121,6 +144,20 @@ func (g *Generator) parseFile(file *ast.File) {
 		}
 		return true
 	})
+}
+
+// convertLiteralToInt tries to convert a basic literal to an integer value
+func convertLiteralToInt(lit *ast.BasicLit) (int, error) {
+	switch lit.Kind {
+	case token.INT:
+		var val int
+		if _, err := fmt.Sscanf(lit.Value, "%d", &val); err == nil {
+			return val, nil
+		}
+		return 0, fmt.Errorf("cannot convert %s to int", lit.Value)
+	default:
+		return 0, fmt.Errorf("unsupported literal kind: %v", lit.Kind)
+	}
 }
 
 // Generate creates the enum code file. it takes the const values found in Parse and creates

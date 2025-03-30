@@ -191,6 +191,32 @@ func TestGenerator(t *testing.T) {
 		assert.Error(t, err)
 	})
 
+	t.Run("explicit values", func(t *testing.T) {
+		// create temp dir for output
+		tmpDir := t.TempDir()
+
+		gen, err := New("explicitValues", tmpDir)
+		require.NoError(t, err)
+
+		// parse testdata
+		err = gen.Parse("testdata")
+		require.NoError(t, err)
+
+		// generate
+		err = gen.Generate()
+		require.NoError(t, err)
+
+		// verify file was created
+		content, err := os.ReadFile(filepath.Join(tmpDir, "explicit_values_enum.go"))
+		require.NoError(t, err)
+
+		// check content
+		assert.Contains(t, string(content), "type ExplicitValues struct")
+		assert.Contains(t, string(content), "value: 10") // Should have actual value 10, not 0
+		assert.Contains(t, string(content), "value: 20") // Should have actual value 20, not 1
+		assert.Contains(t, string(content), "value: 30") // Should have actual value 30, not 2
+	})
+
 	t.Run("invalid package", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		err := os.WriteFile(filepath.Join(tmpDir, "invalid.go"), []byte(`invalid go file`), 0o600)
