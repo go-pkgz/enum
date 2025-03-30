@@ -212,9 +212,9 @@ func TestGenerator(t *testing.T) {
 
 		// check content
 		assert.Contains(t, string(content), "type ExplicitValues struct")
-		assert.Contains(t, string(content), "value: 10") // Should have actual value 10, not 0
-		assert.Contains(t, string(content), "value: 20") // Should have actual value 20, not 1
-		assert.Contains(t, string(content), "value: 30") // Should have actual value 30, not 2
+		assert.Contains(t, string(content), "value: 10") // should have actual value 10, not 0
+		assert.Contains(t, string(content), "value: 20") // should have actual value 20, not 1
+		assert.Contains(t, string(content), "value: 30") // should have actual value 30, not 2
 	})
 
 	t.Run("invalid package", func(t *testing.T) {
@@ -262,6 +262,21 @@ func TestGeneratorValues(t *testing.T) {
 	assert.Equal(t, 1, gen.values["statusActive"], "active should be 1")
 	assert.Equal(t, 2, gen.values["statusInactive"], "inactive should be 2")
 	assert.Equal(t, 3, gen.values["statusBlocked"], "blocked should be 3")
+}
+
+func TestRepeatValues(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	gen, err := New("repeatValues", tmpDir)
+	require.NoError(t, err)
+
+	err = gen.Parse("testdata")
+	require.NoError(t, err)
+
+	assert.Equal(t, 10, gen.values["repeatValuesFirst"], "First should be 10")
+	assert.Equal(t, 10, gen.values["repeatValuesSecond"], "Second should repeat the value 10") // currently fails
+	assert.Equal(t, 20, gen.values["repeatValuesThird"], "Third should be 20")
+	assert.Equal(t, 20, gen.values["repeatValuesFourth"], "Fourth should repeat the value 20") // currently fails
 }
 
 func TestGeneratorSubdir(t *testing.T) {
