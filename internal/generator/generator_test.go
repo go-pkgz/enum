@@ -314,13 +314,62 @@ func TestGeneratorLowerCase(t *testing.T) {
 	})
 }
 
+func TestPermissions(t *testing.T) {
+	t.Run("uses appropriate permissions", func(t *testing.T) {
+		// create source directory with custom permissions
+		tmpDir := t.TempDir()
+		sourceDir := filepath.Join(tmpDir, "source")
+		outputDir := filepath.Join(tmpDir, "output")
+
+		// create source directory with 0755 permissions
+		err := os.MkdirAll(sourceDir, 0o755)
+		require.NoError(t, err)
+
+		// create a sample status file
+		sampleFile := `package source
+const (
+	statusUnknown = iota
+	statusActive
+	statusInactive
+)
+`
+		err = os.WriteFile(filepath.Join(sourceDir, "status.go"), []byte(sampleFile), 0o644)
+		require.NoError(t, err)
+
+		// create generator and run it
+		gen, err := New("status", outputDir)
+		require.NoError(t, err)
+
+		err = gen.Parse(sourceDir)
+		require.NoError(t, err)
+
+		err = gen.Generate()
+		require.NoError(t, err)
+
+		// check that output directory has same permissions as source directory
+		outputInfo, err := os.Stat(outputDir)
+		require.NoError(t, err)
+		// on some OS TempDir may return different permissions, so we just check it's not 0700
+		assert.NotEqual(t, os.FileMode(0o700), outputInfo.Mode().Perm(),
+			"Output directory shouldn't have hardcoded 0o700 permissions")
+
+		// check output file permissions
+		outputFile := filepath.Join(outputDir, "status_enum.go")
+		fileInfo, err := os.Stat(outputFile)
+		require.NoError(t, err)
+		// should be 0644 by default
+		assert.Equal(t, os.FileMode(0o644), fileInfo.Mode().Perm(),
+			"Output file should have 0o644 permissions")
+	})
+}
+
 func TestGeneratorEdgeCases(t *testing.T) {
 	t.Run("invalid template", func(t *testing.T) {
-		// Create a generator with a broken template that will fail to execute
+		// create a generator with a broken template that will fail to execute
 		gen, err := New("status", "")
 		require.NoError(t, err)
 
-		// Override template with invalid one
+		// override template with invalid one
 		origTmpl := enumTemplate
 		defer func() { enumTemplate = origTmpl }()
 		enumTemplate = template.Must(template.New("broken").Parse("{{.Unknown}}")) // will fail on execution
@@ -337,7 +386,7 @@ func TestGeneratorEdgeCases(t *testing.T) {
 		gen, err := New("status", "")
 		require.NoError(t, err)
 
-		// Override template to generate invalid Go code
+		// override template to generate invalid Go code
 		origTmpl := enumTemplate
 		defer func() { enumTemplate = origTmpl }()
 		enumTemplate = template.Must(template.New("invalid").Parse("invalid go code"))
