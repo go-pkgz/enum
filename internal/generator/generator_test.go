@@ -238,7 +238,7 @@ func TestGenerator(t *testing.T) {
 		require.NoError(t, err)
 
 		// check content
-		assert.Contains(t, string(content), "func GetJobStatus(v int) (JobStatus, error)")
+		assert.Contains(t, string(content), "func GetJobStatusByID(v int) (JobStatus, error)")
 		assert.Contains(t, string(content), "case 0:\n\t\treturn JobStatusUnknown, nil")
 		assert.Contains(t, string(content), "case 1:\n\t\treturn JobStatusActive, nil")
 		assert.Contains(t, string(content), "case 2:\n\t\treturn JobStatusInactive, nil")
@@ -266,7 +266,7 @@ func TestGenerator(t *testing.T) {
 		require.NoError(t, err)
 
 		// check content
-		assert.Contains(t, string(content), "func GetExplicitValues(v int) (ExplicitValues, error)")
+		assert.Contains(t, string(content), "func GetExplicitValuesByID(v int) (ExplicitValues, error)")
 		assert.Contains(t, string(content), "case 10:\n\t\treturn ExplicitValuesFirst, nil")
 		assert.Contains(t, string(content), "case 20:\n\t\treturn ExplicitValuesSecond, nil")
 		assert.Contains(t, string(content), "case 30:\n\t\treturn ExplicitValuesThird, nil")

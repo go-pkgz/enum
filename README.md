@@ -89,7 +89,7 @@ go generate ./...
 - `-type` (required): the name of the type to generate enum for (must be private)
 - `-path`: output directory path (default: same as source)
 - `-lower`: use lowercase for marshaled/unmarshaled values
-- `-getter`: Additionally generates a getter function for enum values. The `-getter` flag requires enum values to be unique to prevent undefined behavior.
+- `-getter`: enables the generation of an additional function, `Get{{Type}}ByID`, which attempts to find the corresponding enum element by its underlying integer ID. The `-getter` flag requires enum elements to have unique IDs to prevent undefined behavior.
 - `-version`: print version information
 - `-help`: show usage information
 
@@ -105,7 +105,7 @@ The generator creates a new type with the following features:
 - All possible names slice (`StatusNames`)
 - Public constants for each value (`StatusActive`, `StatusInactive`, etc.)
 
-Additionally, if the `-getter` flag is set, a getter function (`GetStatus`) will be generated. This function allows retrieving an enum value by its raw integer value.
+Additionally, if the `-getter` flag is set, a getter function (`GetStatusByID`) will be generated. This function allows retrieving an enum element using its raw integer ID.
 
 ### Case Sensitivity
 
@@ -118,6 +118,13 @@ StatusActive.String() // returns "Active"
 // with -lower flag
 StatusActive.String() // returns "active"
 ```
+
+### Getter Generation
+
+The `-getter` flag enables the generation of an additional function, `Get{{Type}}ByID`, which attempts to find the corresponding enum element by its underlying integer ID. If no matching element is found, an error is returned.
+
+> **Note:**
+> The `-getter` flag requires all IDs in the generated enum to be unique to prevent undefined behavior. If duplicate IDs are found, generation will fail with an error specifying which elements share the same ID.
 
 ### Error Handling
 

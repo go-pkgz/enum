@@ -90,8 +90,8 @@ func Must{{.Type | title}}(v string) {{.Type | title}} {
 }
 
 {{if .GenerateGetter -}}
-// Get{{.Type | title}} gets the correspondent {{.Type}} enum value
-func Get{{.Type | title}}(v int) ({{.Type | title}}, error) {
+// Get{{.Type | title}}ByID gets the correspondent {{.Type}} enum value by its ID (raw integer value)
+func Get{{.Type | title}}ByID(v int) ({{.Type | title}}, error) {
 	switch v {
 	{{range .Values -}}
 	case {{.Index}}:
