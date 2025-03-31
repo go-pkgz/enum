@@ -10,7 +10,7 @@ import (
 // JobStatus is the exported type for the enum
 type JobStatus struct {
 	name  string
-	value int
+	value uint8
 }
 
 func (e JobStatus) String() string { return e.name }
@@ -85,7 +85,7 @@ func MustJobStatus(v string) JobStatus {
 }
 
 // GetJobStatusByID gets the correspondent jobStatus enum value by its ID (raw integer value)
-func GetJobStatusByID(v int) (JobStatus, error) {
+func GetJobStatusByID(v uint8) (JobStatus, error) {
 	switch v {
 	case 1:
 		return JobStatusActive, nil

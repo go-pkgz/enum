@@ -238,7 +238,7 @@ func TestGenerator(t *testing.T) {
 		require.NoError(t, err)
 
 		// check content
-		assert.Contains(t, string(content), "func GetJobStatusByID(v int) (JobStatus, error)")
+		assert.Contains(t, string(content), "func GetJobStatusByID(v uint8) (JobStatus, error)")
 		assert.Contains(t, string(content), "case 0:\n\t\treturn JobStatusUnknown, nil")
 		assert.Contains(t, string(content), "case 1:\n\t\treturn JobStatusActive, nil")
 		assert.Contains(t, string(content), "case 2:\n\t\treturn JobStatusInactive, nil")
@@ -266,7 +266,7 @@ func TestGenerator(t *testing.T) {
 		require.NoError(t, err)
 
 		// check content
-		assert.Contains(t, string(content), "func GetExplicitValuesByID(v int) (ExplicitValues, error)")
+		assert.Contains(t, string(content), "func GetExplicitValuesByID(v uint8) (ExplicitValues, error)")
 		assert.Contains(t, string(content), "case 10:\n\t\treturn ExplicitValuesFirst, nil")
 		assert.Contains(t, string(content), "case 20:\n\t\treturn ExplicitValuesSecond, nil")
 		assert.Contains(t, string(content), "case 30:\n\t\treturn ExplicitValuesThird, nil")
@@ -442,6 +442,7 @@ func TestPermissions(t *testing.T) {
 
 		// create a sample status file
 		sampleFile := `package source
+type status uint8
 const (
 	statusUnknown = iota
 	statusActive
@@ -540,6 +541,7 @@ func TestParseSpecialCases(t *testing.T) {
 		tmpDir := t.TempDir()
 		err := os.WriteFile(filepath.Join(tmpDir, "empty.go"), []byte(`
 package test
+type status uint8
 const (
 )
 `), 0o644)
@@ -557,6 +559,7 @@ const (
 		tmpDir := t.TempDir()
 		err := os.WriteFile(filepath.Join(tmpDir, "no_values.go"), []byte(`
 package test
+type status uint8
 const name string
 `), 0o644)
 		require.NoError(t, err)
@@ -567,6 +570,26 @@ const name string
 		err = gen.Parse(tmpDir)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "no const values found for type status")
+	})
+
+	t.Run("no status type", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		err := os.WriteFile(filepath.Join(tmpDir, "no_type.go"), []byte(`
+package test
+const (
+	statusUnknown = iota
+	statusActive
+	statusInactive
+)
+`), 0o644)
+		require.NoError(t, err)
+
+		gen, err := New("status", "")
+		require.NoError(t, err)
+
+		err = gen.Parse(tmpDir)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "type status not found")
 	})
 }
 
