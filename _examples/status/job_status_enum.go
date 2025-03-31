@@ -84,8 +84,8 @@ func MustJobStatus(v string) JobStatus {
 	return r
 }
 
-// GetJobStatus gets the correspondent jobStatus enum value
-func GetJobStatus(v int) (JobStatus, error) {
+// GetJobStatusByID gets the correspondent jobStatus enum value by its ID (raw integer value)
+func GetJobStatusByID(v int) (JobStatus, error) {
 	switch v {
 	case 1:
 		return JobStatusActive, nil
