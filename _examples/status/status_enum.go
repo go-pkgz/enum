@@ -10,7 +10,7 @@ import (
 // Status is the exported type for the enum
 type Status struct {
 	name  string
-	value int
+	value uint8
 }
 
 func (e Status) String() string { return e.name }

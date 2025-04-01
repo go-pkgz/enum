@@ -33,6 +33,7 @@ type Generator struct {
 	pkgName        string         // package name from source file
 	lowerCase      bool           // use lower case for marshal/unmarshal
 	generateGetter bool           // generate getter methods for enum values
+	originalType   string         // original type name (e.g., "uint8")
 }
 
 // Value represents a single enum value
@@ -88,6 +89,9 @@ func (g *Generator) Parse(dir string) error {
 		}
 	}
 
+	if g.originalType == "" {
+		return fmt.Errorf("type %s not found", g.Type)
+	}
 	if len(g.values) == 0 {
 		return fmt.Errorf("no const values found for type %s", g.Type)
 	}
@@ -97,7 +101,22 @@ func (g *Generator) Parse(dir string) error {
 
 // parseFile processes a single file for enum declarations
 func (g *Generator) parseFile(file *ast.File) {
-
+	parseTypeBlock := func(decl *ast.GenDecl) {
+		// extracts the type name from a const block
+		for _, spec := range decl.Specs {
+			vspec, ok := spec.(*ast.TypeSpec)
+			if !ok {
+				continue
+			}
+			if vspec.Name.Name == g.Type {
+				tspec, ok := vspec.Type.(*ast.Ident)
+				if !ok {
+					continue
+				}
+				g.originalType = tspec.Name
+			}
+		}
+	}
 	parseConstBlock := func(decl *ast.GenDecl) {
 		// extracts enum values from a const block
 		var iotaVal int
@@ -155,8 +174,13 @@ func (g *Generator) parseFile(file *ast.File) {
 	}
 
 	ast.Inspect(file, func(n ast.Node) bool {
-		if decl, ok := n.(*ast.GenDecl); ok && decl.Tok == token.CONST {
-			parseConstBlock(decl)
+		if decl, ok := n.(*ast.GenDecl); ok {
+			switch decl.Tok {
+			case token.CONST:
+				parseConstBlock(decl)
+			case token.TYPE:
+				parseTypeBlock(decl)
+			}
 		}
 		return true
 	})
@@ -250,12 +274,14 @@ func (g *Generator) Generate() error {
 		Package        string
 		LowerCase      bool
 		GenerateGetter bool
+		OriginalType   string
 	}{
 		Type:           g.Type,
 		Values:         values,
 		Package:        pkgName,
 		LowerCase:      g.lowerCase,
 		GenerateGetter: g.generateGetter,
+		OriginalType:   g.originalType,
 	}
 
 	// execute template
