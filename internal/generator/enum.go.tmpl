@@ -89,6 +89,19 @@ func Must{{.Type | title}}(v string) {{.Type | title}} {
 	return r
 }
 
+{{if .GenerateGetter -}}
+// Get{{.Type | title}}ByID gets the correspondent {{.Type}} enum value by its ID (raw integer value)
+func Get{{.Type | title}}ByID(v int) ({{.Type | title}}, error) {
+	switch v {
+	{{range .Values -}}
+	case {{.Index}}:
+		return {{.PublicName}}, nil
+	{{end -}}
+	}
+	return {{.Type | title}}{}, fmt.Errorf("invalid {{.Type}} value: %d", v)
+}
+{{end -}}
+
 // Public constants for {{.Type}} values
 var (
 {{range .Values -}}

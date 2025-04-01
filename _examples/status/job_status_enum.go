@@ -84,6 +84,21 @@ func MustJobStatus(v string) JobStatus {
 	return r
 }
 
+// GetJobStatusByID gets the correspondent jobStatus enum value by its ID (raw integer value)
+func GetJobStatusByID(v int) (JobStatus, error) {
+	switch v {
+	case 1:
+		return JobStatusActive, nil
+	case 3:
+		return JobStatusBlocked, nil
+	case 2:
+		return JobStatusInactive, nil
+	case 0:
+		return JobStatusUnknown, nil
+	}
+	return JobStatus{}, fmt.Errorf("invalid jobStatus value: %d", v)
+}
+
 // Public constants for jobStatus values
 var (
 	JobStatusActive   = JobStatus{name: "active", value: 1}

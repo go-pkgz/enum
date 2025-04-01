@@ -217,6 +217,80 @@ func TestGenerator(t *testing.T) {
 		assert.Contains(t, string(content), "value: 30") // should have actual value 30, not 2
 	})
 
+	t.Run("generate getter", func(t *testing.T) {
+		// create temp dir for output
+		tmpDir := t.TempDir()
+
+		gen, err := New("jobStatus", tmpDir)
+		require.NoError(t, err)
+		gen.SetGenerateGetter(true)
+
+		// parse testdata
+		err = gen.Parse("testdata")
+		require.NoError(t, err)
+
+		// generate
+		err = gen.Generate()
+		require.NoError(t, err)
+
+		// verify file was created
+		content, err := os.ReadFile(filepath.Join(tmpDir, "job_status_enum.go"))
+		require.NoError(t, err)
+
+		// check content
+		assert.Contains(t, string(content), "func GetJobStatusByID(v int) (JobStatus, error)")
+		assert.Contains(t, string(content), "case 0:\n\t\treturn JobStatusUnknown, nil")
+		assert.Contains(t, string(content), "case 1:\n\t\treturn JobStatusActive, nil")
+		assert.Contains(t, string(content), "case 2:\n\t\treturn JobStatusInactive, nil")
+		assert.Contains(t, string(content), "case 3:\n\t\treturn JobStatusBlocked, nil")
+	})
+
+	t.Run("generate getter explicit values", func(t *testing.T) {
+		// create temp dir for output
+		tmpDir := t.TempDir()
+
+		gen, err := New("explicitValues", tmpDir)
+		require.NoError(t, err)
+		gen.SetGenerateGetter(true)
+
+		// parse testdata
+		err = gen.Parse("testdata")
+		require.NoError(t, err)
+
+		// generate
+		err = gen.Generate()
+		require.NoError(t, err)
+
+		// verify file was created
+		content, err := os.ReadFile(filepath.Join(tmpDir, "explicit_values_enum.go"))
+		require.NoError(t, err)
+
+		// check content
+		assert.Contains(t, string(content), "func GetExplicitValuesByID(v int) (ExplicitValues, error)")
+		assert.Contains(t, string(content), "case 10:\n\t\treturn ExplicitValuesFirst, nil")
+		assert.Contains(t, string(content), "case 20:\n\t\treturn ExplicitValuesSecond, nil")
+		assert.Contains(t, string(content), "case 30:\n\t\treturn ExplicitValuesThird, nil")
+	})
+
+	t.Run("generate getter repeated values", func(t *testing.T) {
+		// create temp dir for output
+		tmpDir := t.TempDir()
+
+		gen, err := New("repeatValues", tmpDir)
+		require.NoError(t, err)
+		gen.SetGenerateGetter(true)
+
+		// parse testdata
+		err = gen.Parse("testdata")
+		require.NoError(t, err)
+
+		// generate
+		err = gen.Generate()
+		require.Error(t, err, "should fail with repeated values")
+		assert.Contains(t, err.Error(), "multiple names for value 10: ")
+		assert.Contains(t, err.Error(), "multiple names for value 20: ")
+	})
+
 	t.Run("invalid package", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		err := os.WriteFile(filepath.Join(tmpDir, "invalid.go"), []byte(`invalid go file`), 0o600)
