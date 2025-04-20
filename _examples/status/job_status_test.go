@@ -141,7 +141,7 @@ func ExampleJobStatusIter() {
 	for js := range JobStatusIter() {
 		allStatuses = append(allStatuses, js)
 	}
-	fmt.Println("All job statuses:", len(allStatuses))
+	fmt.Println("all job statuses:", len(allStatuses))
 
 	// early termination example
 	var firstTwo []JobStatus
@@ -153,7 +153,7 @@ func ExampleJobStatusIter() {
 			break
 		}
 	}
-	fmt.Println("First two job statuses:", firstTwo[0], firstTwo[1])
+	fmt.Println("first two job statuses:", firstTwo[0], firstTwo[1])
 	// output:
 	// all job statuses: 4
 	// first two job statuses: active blocked

@@ -141,7 +141,7 @@ func ExampleStatusIter() {
 	for s := range StatusIter() {
 		allStatuses = append(allStatuses, s)
 	}
-	fmt.Println("All statuses:", len(allStatuses))
+	fmt.Println("all statuses:", len(allStatuses))
 
 	// early termination example
 	var firstTwo []Status
@@ -153,7 +153,7 @@ func ExampleStatusIter() {
 			break
 		}
 	}
-	fmt.Println("First two statuses:", firstTwo[0], firstTwo[1])
+	fmt.Println("first two statuses:", firstTwo[0], firstTwo[1])
 	// output:
 	// all statuses: 4
 	// first two statuses: active blocked
