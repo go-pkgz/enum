@@ -111,3 +111,14 @@ func StatusNames() []string {
 		"unknown",
 	}
 }
+
+// StatusIter returns an iterator over all enum values
+func StatusIter() func(yield func(Status) bool) {
+	return func(yield func(Status) bool) {
+		for _, v := range StatusValues() {
+			if !yield(v) {
+				break
+			}
+		}
+	}
+}

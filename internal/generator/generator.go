@@ -188,7 +188,7 @@ func convertLiteralToInt(lit *ast.BasicLit) (int, error) {
 func (g *Generator) Generate() error {
 	values := make([]Value, 0, len(g.values))
 	names := make([]string, 0, len(g.values))
-	// To avoid an undefined behavior for a Getter, we need to check if the values are unique
+	// to avoid an undefined behavior for a Getter, we need to check if the values are unique
 	if g.generateGetter {
 		valuesCounter := make(map[int][]string)
 		// check if multiple names exist for the same value

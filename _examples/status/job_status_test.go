@@ -107,10 +107,54 @@ func TestJobStatus(t *testing.T) {
 		err := json.Unmarshal([]byte(`{"status":"invalid"}`), &d)
 		assert.Error(t, err)
 	})
+
+	t.Run("iterator", func(t *testing.T) {
+		var collected []JobStatus
+		JobStatusIter()(func(js JobStatus) bool {
+			collected = append(collected, js)
+			return true
+		})
+
+		assert.Equal(t, JobStatusValues(), collected)
+
+		collected = nil
+		count := 0
+		JobStatusIter()(func(js JobStatus) bool {
+			collected = append(collected, js)
+			count++
+			return count < 2 // stop after collecting 2 items
+		})
+
+		assert.Equal(t, JobStatusValues()[:2], collected)
+	})
 }
 
 func ExampleJobStatus() {
 	s := JobStatusActive
 	fmt.Println(s.String())
 	// output: active
+}
+
+func ExampleJobStatusIter() {
+	// using Go 1.23 range-over-func feature
+	var allStatuses []JobStatus
+	for js := range JobStatusIter() {
+		allStatuses = append(allStatuses, js)
+	}
+	fmt.Println("All job statuses:", len(allStatuses))
+
+	// early termination example
+	var firstTwo []JobStatus
+	count := 0
+	for js := range JobStatusIter() {
+		firstTwo = append(firstTwo, js)
+		count++
+		if count >= 2 {
+			break
+		}
+	}
+	fmt.Println("First two job statuses:", firstTwo[0], firstTwo[1])
+	// output:
+	// all job statuses: 4
+	// first two job statuses: active blocked
 }

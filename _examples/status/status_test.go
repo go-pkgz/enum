@@ -100,6 +100,26 @@ func TestStatus(t *testing.T) {
 		assert.Equal(t, StatusValues()[0], s)
 	})
 
+	t.Run("iterator", func(t *testing.T) {
+		var collected []Status
+		StatusIter()(func(s Status) bool {
+			collected = append(collected, s)
+			return true
+		})
+
+		assert.Equal(t, StatusValues(), collected)
+
+		collected = nil
+		count := 0
+		StatusIter()(func(s Status) bool {
+			collected = append(collected, s)
+			count++
+			return count < 2 // stop after collecting 2 items
+		})
+
+		assert.Equal(t, StatusValues()[:2], collected)
+	})
+
 	t.Run("invalid", func(t *testing.T) {
 		var d struct {
 			Status Status `json:"status"`
@@ -113,4 +133,28 @@ func ExampleStatus() {
 	s := StatusActive
 	fmt.Println(s.String())
 	// output: active
+}
+
+func ExampleStatusIter() {
+	// using Go 1.23 range-over-func feature
+	var allStatuses []Status
+	for s := range StatusIter() {
+		allStatuses = append(allStatuses, s)
+	}
+	fmt.Println("All statuses:", len(allStatuses))
+
+	// early termination example
+	var firstTwo []Status
+	count := 0
+	for s := range StatusIter() {
+		firstTwo = append(firstTwo, s)
+		count++
+		if count >= 2 {
+			break
+		}
+	}
+	fmt.Println("First two statuses:", firstTwo[0], firstTwo[1])
+	// output:
+	// all statuses: 4
+	// first two statuses: active blocked
 }

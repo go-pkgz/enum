@@ -126,3 +126,14 @@ func JobStatusNames() []string {
 		"unknown",
 	}
 }
+
+// JobStatusIter returns an iterator over all enum values
+func JobStatusIter() func(yield func(JobStatus) bool) {
+	return func(yield func(JobStatus) bool) {
+		for _, v := range JobStatusValues() {
+			if !yield(v) {
+				break
+			}
+		}
+	}
+}

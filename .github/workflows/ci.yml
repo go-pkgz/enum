@@ -33,9 +33,9 @@ jobs:
         run: go test -timeout=60s -race
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v7
         with:
-          version: latest
+          version: v2.0.2
           skip-pkg-cache: true
 
       - name: install goveralls
