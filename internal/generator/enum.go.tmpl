@@ -126,3 +126,20 @@ func {{.Type | title}}Names() []string {
 	{{end -}}
 	}
 }
+
+// {{.Type | title}}Iter returns a function compatible with Go 1.23's range-over-func syntax.
+// It yields all {{.Type | title}} values in declaration order. Example:
+//
+//	for v := range {{.Type | title}}Iter() {
+//	    // use v
+//	}
+//
+func {{.Type | title}}Iter() func(yield func({{.Type | title}}) bool) {
+	return func(yield func({{.Type | title}}) bool) {
+		for _, v := range {{.Type | title}}Values() {
+			if !yield(v) {
+				break
+			}
+		}
+	}
+}

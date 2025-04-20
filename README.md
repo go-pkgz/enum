@@ -13,6 +13,7 @@
 - Easy value enumeration with Values() and Names() functions
 - Generated code is fully tested and documented
 - No external runtime dependencies
+- Supports Go 1.23's range-over-func iteration
 
 ## Quick Start
 
@@ -51,6 +52,11 @@ type Data struct {
 d := Data{Status: StatusActive}
 b, _ := json.Marshal(d)
 fmt.Println(string(b)) // prints: {"status":"active"}
+
+// iterate over all values using Go 1.23 range-over-func
+for status := range StatusIter() {
+    fmt.Println(status) // prints each status in turn
+}
 ```
 
 ## Installation
@@ -103,6 +109,7 @@ The generator creates a new type with the following features:
 - Must-style parse function that panics on error (`MustStatus`)
 - All possible values slice (`StatusValues`)
 - All possible names slice (`StatusNames`)
+- Go 1.23 iterator support (`StatusIter()`) for range-over-func syntax
 - Public constants for each value (`StatusActive`, `StatusInactive`, etc.)
 
 Additionally, if the `-getter` flag is set, a getter function (`GetStatusByID`) will be generated. This function allows retrieving an enum element using its raw integer ID.
