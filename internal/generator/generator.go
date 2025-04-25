@@ -103,6 +103,9 @@ func (g *Generator) parseFile(file *ast.File) {
 		var iotaVal int
 		var lastExprWasIota bool
 		var lastExplicitVal int
+		var iotaBaseValue int  // base value for iota (e.g., 1 in "iota + 1")
+		var iotaStarted bool   // whether we've encountered an iota expression
+		var hasIotaOffset bool // whether we have an offset for iota
 
 		for _, spec := range decl.Specs {
 			vspec, ok := spec.(*ast.ValueSpec)
@@ -131,6 +134,8 @@ func (g *Generator) parseFile(file *ast.File) {
 							// the expression is an iota identifier
 							g.values[name.Name] = iotaVal
 							lastExprWasIota = true
+							iotaStarted = true
+							hasIotaOffset = false // Reset offset for plain iota
 						}
 					case *ast.BasicLit:
 						// try to extract literal value
@@ -138,11 +143,38 @@ func (g *Generator) parseFile(file *ast.File) {
 							g.values[name.Name] = val
 							lastExplicitVal = val
 							lastExprWasIota = false
+							iotaStarted = false // Reset iota tracking for non-iota expressions
+							hasIotaOffset = false
+						}
+					case *ast.BinaryExpr:
+						// handle binary expressions like iota + 1
+						val, usesIota, _, err := evaluateBinaryExpr(expr, iotaVal)
+						if err == nil {
+							g.values[name.Name] = val
+							lastExplicitVal = val
+							if usesIota {
+								lastExprWasIota = true
+								iotaStarted = true
+								if !hasIotaOffset { // Only set offset on first occurrence
+									// iotaOffset no longer needed
+									iotaBaseValue = val - iotaVal // Calculate base value
+									hasIotaOffset = true
+								}
+							} else {
+								lastExprWasIota = false
+								iotaStarted = false
+								hasIotaOffset = false
+							}
 						}
 					}
 				case lastExprWasIota:
 					// if previous expr was iota and this one has no value, assume iota continues
-					g.values[name.Name] = iotaVal
+					if hasIotaOffset && iotaStarted {
+						// If we have an offset (iota + N), apply the same formula
+						g.values[name.Name] = iotaBaseValue + iotaVal
+					} else {
+						g.values[name.Name] = iotaVal
+					}
 				default:
 					// if this constant omits its expression following a non-iota value,
 					// it repeats the previous expression (which means it gets the same value)
@@ -174,6 +206,90 @@ func convertLiteralToInt(lit *ast.BasicLit) (int, error) {
 	default:
 		return 0, fmt.Errorf("unsupported literal kind: %v", lit.Kind)
 	}
+}
+
+// evaluateBinaryExpr evaluates binary expressions like iota + 1
+// Returns:
+// - value: the computed value of the expression
+// - usesIota: whether the expression uses iota
+// - offset: the offset value if the expression is in the form of "iota + N" or "iota - N"
+// - error: any error encountered
+func evaluateBinaryExpr(expr *ast.BinaryExpr, iotaVal int) (value int, usesIota bool, offset int, err error) {
+	// Handle left side of expression
+	var leftVal int
+	var leftIsIota bool
+
+	switch left := expr.X.(type) {
+	case *ast.Ident:
+		if left.Name == "iota" {
+			leftVal = iotaVal
+			leftIsIota = true
+		} else {
+			return 0, false, 0, fmt.Errorf("unsupported identifier in binary expression: %s", left.Name)
+		}
+	case *ast.BasicLit:
+		var err error
+		leftVal, err = convertLiteralToInt(left)
+		if err != nil {
+			return 0, false, 0, err
+		}
+	default:
+		return 0, false, 0, fmt.Errorf("unsupported expression type on left side: %T", left)
+	}
+
+	// Handle right side of expression
+	var rightVal int
+	var rightIsIota bool
+
+	switch right := expr.Y.(type) {
+	case *ast.Ident:
+		if right.Name == "iota" {
+			rightVal = iotaVal
+			rightIsIota = true
+		} else {
+			return 0, false, 0, fmt.Errorf("unsupported identifier in binary expression: %s", right.Name)
+		}
+	case *ast.BasicLit:
+		var err error
+		rightVal, err = convertLiteralToInt(right)
+		if err != nil {
+			return 0, false, 0, err
+		}
+	default:
+		return 0, false, 0, fmt.Errorf("unsupported expression type on right side: %T", right)
+	}
+
+	// Check if expression uses iota
+	usesIota = leftIsIota || rightIsIota
+
+	// Calculate offset for expressions like "iota + N" or "iota - N"
+	switch {
+	case expr.Op == token.ADD && leftIsIota && !rightIsIota:
+		offset = rightVal
+	case expr.Op == token.ADD && rightIsIota && !leftIsIota:
+		offset = leftVal
+	case expr.Op == token.SUB && leftIsIota && !rightIsIota:
+		offset = -rightVal
+	}
+
+	// Evaluate the expression based on the operator
+	switch expr.Op {
+	case token.ADD:
+		value = leftVal + rightVal
+	case token.SUB:
+		value = leftVal - rightVal
+	case token.MUL:
+		value = leftVal * rightVal
+	case token.QUO:
+		if rightVal == 0 {
+			return 0, false, 0, fmt.Errorf("division by zero")
+		}
+		value = leftVal / rightVal
+	default:
+		return 0, false, 0, fmt.Errorf("unsupported binary operator: %v", expr.Op)
+	}
+
+	return value, usesIota, offset, nil
 }
 
 // Generate creates the enum code file. it takes the const values found in Parse and creates

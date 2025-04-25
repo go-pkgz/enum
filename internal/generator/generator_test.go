@@ -353,6 +353,44 @@ func TestRepeatValues(t *testing.T) {
 	assert.Equal(t, 20, gen.values["repeatValuesFourth"], "Fourth should repeat the value 20") // currently fails
 }
 
+func TestBinaryExprValues(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	gen, err := New("binaryExpr", tmpDir)
+	require.NoError(t, err)
+
+	err = gen.Parse("testdata")
+	require.NoError(t, err)
+
+	// Check that all values are found
+	assert.Contains(t, gen.values, "binaryExprFirst", "First value should be found")
+	assert.Contains(t, gen.values, "binaryExprSecond", "Second value should be found")
+	assert.Contains(t, gen.values, "binaryExprThird", "Third value should be found")
+
+	// Check that values are correct (iota + 1)
+	assert.Equal(t, 1, gen.values["binaryExprFirst"], "First should be 1")
+	assert.Equal(t, 2, gen.values["binaryExprSecond"], "Second should be 2")
+	assert.Equal(t, 3, gen.values["binaryExprThird"], "Third should be 3")
+
+	// Generate the enum and verify it contains all constants
+	err = gen.Generate()
+	require.NoError(t, err)
+
+	// Verify file was created
+	content, err := os.ReadFile(filepath.Join(tmpDir, "binary_expr_enum.go"))
+	require.NoError(t, err)
+
+	// Check that all constants are present in the generated file
+	assert.Contains(t, string(content), "BinaryExprFirst")
+	assert.Contains(t, string(content), "BinaryExprSecond")
+	assert.Contains(t, string(content), "BinaryExprThird")
+
+	// Check the values are correct
+	assert.Contains(t, string(content), "value: 1")
+	assert.Contains(t, string(content), "value: 2")
+	assert.Contains(t, string(content), "value: 3")
+}
+
 func TestGeneratorSubdir(t *testing.T) {
 	tmpDir := t.TempDir()
 	subDir := filepath.Join(tmpDir, "subpkg")
