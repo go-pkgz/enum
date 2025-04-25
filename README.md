@@ -20,7 +20,7 @@
 Here's a minimal example showing how to define and use an enum:
 
 ```go
-//go:generate go run github.com/go-pkgz/enum -type status -lower
+//go:generate go run github.com/go-pkgz/enum@latest -type status -lower
 
 type status uint8
 
@@ -82,7 +82,7 @@ const (
 
 2. Add the generate directive:
 ```go
-//go:generate go run github.com/go-pkgz/enum -type status
+//go:generate go run github.com/go-pkgz/enum@latest -type status
 ```
 
 3. Run the generator:
