@@ -143,3 +143,15 @@ func {{.Type | title}}Iter() func(yield func({{.Type | title}}) bool) {
 		}
 	}
 }
+
+// These variables are used to prevent the compiler from reporting unused errors
+// for the original enum constants. They are intentionally placed in a var block
+// that is compiled away by the Go compiler.
+var _ = func() bool {
+	var _ {{.Type}} = 0
+	{{range .Values -}}
+	// This avoids "defined but not used" linter error for {{.PrivateName}}
+	var _ {{$.Type}} = {{.PrivateName}}
+	{{end -}}
+	return true
+}()

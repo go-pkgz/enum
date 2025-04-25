@@ -27,7 +27,7 @@ func TestJobStatus(t *testing.T) {
 		d := Data{Status: JobStatusActive}
 		b, err := json.Marshal(d)
 		require.NoError(t, err)
-		assert.Equal(t, `{"status":"active"}`, string(b))
+		assert.JSONEq(t, `{"status":"active"}`, string(b))
 
 		var d2 Data
 		err = json.Unmarshal([]byte(`{"status":"inactive"}`), &d2)

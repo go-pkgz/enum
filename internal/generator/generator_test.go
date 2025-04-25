@@ -478,6 +478,42 @@ const (
 	})
 }
 
+func TestNoLinterWarningsForUnusedConstants(t *testing.T) {
+	tmpDir := t.TempDir()
+	err := os.WriteFile(filepath.Join(tmpDir, "linter_test.go"), []byte(`
+package test
+type linterTest uint8
+const (
+	linterTestUnknown linterTest = iota
+	linterTestValue1
+	linterTestValue2
+)
+`), 0o644)
+	require.NoError(t, err)
+
+	gen, err := New("linterTest", tmpDir)
+	require.NoError(t, err)
+
+	err = gen.Parse(tmpDir)
+	require.NoError(t, err)
+
+	err = gen.Generate()
+	require.NoError(t, err)
+
+	// read the generated file to check for the linter warning prevention code
+	content, err := os.ReadFile(filepath.Join(tmpDir, "linter_test_enum.go"))
+	require.NoError(t, err)
+
+	// check that the unused constants prevention code exists
+	assert.Contains(t, string(content), "// These variables are used to prevent the compiler from reporting unused errors")
+	assert.Contains(t, string(content), "var _ = func() bool {")
+	assert.Contains(t, string(content), "var _ linterTest = 0")
+	assert.Contains(t, string(content), "var _ linterTest = linterTestUnknown")
+	assert.Contains(t, string(content), "var _ linterTest = linterTestValue1")
+	assert.Contains(t, string(content), "var _ linterTest = linterTestValue2")
+	assert.Contains(t, string(content), "return true")
+}
+
 func TestGeneratorEdgeCases(t *testing.T) {
 	t.Run("invalid template", func(t *testing.T) {
 		// create a generator with a broken template that will fail to execute

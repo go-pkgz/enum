@@ -112,7 +112,12 @@ func StatusNames() []string {
 	}
 }
 
-// StatusIter returns an iterator over all enum values
+// StatusIter returns a function compatible with Go 1.23's range-over-func syntax.
+// It yields all Status values in declaration order. Example:
+//
+//	for v := range StatusIter() {
+//	    // use v
+//	}
 func StatusIter() func(yield func(Status) bool) {
 	return func(yield func(Status) bool) {
 		for _, v := range StatusValues() {
@@ -122,3 +127,19 @@ func StatusIter() func(yield func(Status) bool) {
 		}
 	}
 }
+
+// These variables are used to prevent the compiler from reporting unused errors
+// for the original enum constants. They are intentionally placed in a var block
+// that is compiled away by the Go compiler.
+var _ = func() bool {
+	var _ status = 0
+	// This avoids "defined but not used" linter error for statusActive
+	var _ status = statusActive
+	// This avoids "defined but not used" linter error for statusBlocked
+	var _ status = statusBlocked
+	// This avoids "defined but not used" linter error for statusInactive
+	var _ status = statusInactive
+	// This avoids "defined but not used" linter error for statusUnknown
+	var _ status = statusUnknown
+	return true
+}()

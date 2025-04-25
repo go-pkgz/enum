@@ -127,7 +127,12 @@ func JobStatusNames() []string {
 	}
 }
 
-// JobStatusIter returns an iterator over all enum values
+// JobStatusIter returns a function compatible with Go 1.23's range-over-func syntax.
+// It yields all JobStatus values in declaration order. Example:
+//
+//	for v := range JobStatusIter() {
+//	    // use v
+//	}
 func JobStatusIter() func(yield func(JobStatus) bool) {
 	return func(yield func(JobStatus) bool) {
 		for _, v := range JobStatusValues() {
@@ -137,3 +142,19 @@ func JobStatusIter() func(yield func(JobStatus) bool) {
 		}
 	}
 }
+
+// These variables are used to prevent the compiler from reporting unused errors
+// for the original enum constants. They are intentionally placed in a var block
+// that is compiled away by the Go compiler.
+var _ = func() bool {
+	var _ jobStatus = 0
+	// This avoids "defined but not used" linter error for jobStatusActive
+	var _ jobStatus = jobStatusActive
+	// This avoids "defined but not used" linter error for jobStatusBlocked
+	var _ jobStatus = jobStatusBlocked
+	// This avoids "defined but not used" linter error for jobStatusInactive
+	var _ jobStatus = jobStatusInactive
+	// This avoids "defined but not used" linter error for jobStatusUnknown
+	var _ jobStatus = jobStatusUnknown
+	return true
+}()
