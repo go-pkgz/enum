@@ -22,8 +22,10 @@ Here's a minimal example showing how to define and use an enum:
 ```go
 //go:generate go run github.com/go-pkgz/enum@latest -type status -lower
 
+// Type must be lowercase (private)
 type status uint8
 
+// Constants must be prefixed with the type name
 const (
     statusUnknown status = iota
     statusActive
@@ -70,8 +72,10 @@ go install github.com/go-pkgz/enum@latest
 1. Define your enum type and constants:
 
 ```go
+// Type name must be lowercase (private)
 type status uint8
 
+// Constants must be prefixed with the type name
 const (
     statusUnknown status = iota
     statusActive
@@ -92,9 +96,9 @@ go generate ./...
 
 ### Generator Options
 
-- `-type` (required): the name of the type to generate enum for (must be private)
+- `-type` (required): the name of the type to generate enum for (must be lowercase/private)
 - `-path`: output directory path (default: same as source)
-- `-lower`: use lowercase for marshaled/unmarshaled values
+- `-lower`: use lowercase for string representations when marshaling/unmarshaling (affects only the output strings, not the naming pattern)
 - `-getter`: enables the generation of an additional function, `Get{{Type}}ByID`, which attempts to find the corresponding enum element by its underlying integer ID. The `-getter` flag requires enum elements to have unique IDs to prevent undefined behavior.
 - `-version`: print version information
 - `-help`: show usage information
@@ -110,7 +114,7 @@ The generator creates a new type with the following features:
 - All possible values slice (`StatusValues`)
 - All possible names slice (`StatusNames`)
 - Go 1.23 iterator support (`StatusIter()`) for range-over-func syntax
-- Public constants for each value (`StatusActive`, `StatusInactive`, etc.)
+- Public constants for each value (`StatusActive`, `StatusInactive`, etc.) - note that these are capitalized versions of your original constants
 
 Additionally, if the `-getter` flag is set, a getter function (`GetStatusByID`) will be generated. This function allows retrieving an enum element using its raw integer ID.
 
