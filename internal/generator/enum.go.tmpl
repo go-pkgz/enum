@@ -13,7 +13,7 @@ import (
 // {{.Type | title}} is the exported type for the enum
 type {{.Type | title}} struct {
 	name  string
-	value int
+	value {{.OriginalType}}
 }
 
 func (e {{.Type | title}}) String() string { return e.name }
@@ -91,7 +91,7 @@ func Must{{.Type | title}}(v string) {{.Type | title}} {
 
 {{if .GenerateGetter -}}
 // Get{{.Type | title}}ByID gets the correspondent {{.Type}} enum value by its ID (raw integer value)
-func Get{{.Type | title}}ByID(v int) ({{.Type | title}}, error) {
+func Get{{.Type | title}}ByID(v {{.OriginalType}}) ({{.Type | title}}, error) {
 	switch v {
 	{{range .Values -}}
 	case {{.Index}}:
