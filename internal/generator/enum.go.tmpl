@@ -13,10 +13,13 @@ import (
 // {{.Type | title}} is the exported type for the enum
 type {{.Type | title}} struct {
 	name  string
-	value int
+	value {{if .UnderlyingType}}{{.UnderlyingType}}{{else}}int{{end}}
 }
 
 func (e {{.Type | title}}) String() string { return e.name }
+
+// Index returns the underlying integer value
+func (e {{.Type | title}}) Index() {{if .UnderlyingType}}{{.UnderlyingType}}{{else}}int{{end}} { return e.value }
 
 // MarshalText implements encoding.TextMarshaler
 func (e {{.Type | title}}) MarshalText() ([]byte, error) {
@@ -38,8 +41,15 @@ func (e {{.Type | title}}) Value() (driver.Value, error) {
 // Scan implements the sql.Scanner interface
 func (e *{{.Type | title}}) Scan(value interface{}) error {
 	if value == nil {
-		*e = {{.Type | title}}Values()[0]
-		return nil
+		// try to find zero value
+		for _, v := range {{.Type | title}}Values {
+			if v.Index() == 0 {
+				*e = v
+				return nil
+			}
+		}
+		// no zero value found, return error
+		return fmt.Errorf("cannot scan nil into {{.Type | title}}: no zero value defined")
 	}
 
 	str, ok := value.(string)
@@ -60,21 +70,22 @@ func (e *{{.Type | title}}) Scan(value interface{}) error {
 	return nil
 }
 
+// _{{.Type}}ParseMap is used for efficient string to enum conversion
+var _{{.Type}}ParseMap = map[string]{{.Type | title}}{
+{{range .Values -}}
+	"{{.Name | ToLower}}": {{.PublicName}},
+{{end}}
+}
+
 // Parse{{.Type | title}} converts string to {{.Type}} enum value
 func Parse{{.Type | title}}(v string) ({{.Type | title}}, error) {
 {{if .LowerCase}}
-	switch v {
-	{{range .Values -}}
-	case "{{.Name | ToLower}}":
-		return {{.PublicName}}, nil
-	{{end}}
+	if val, ok := _{{.Type}}ParseMap[v]; ok {
+		return val, nil
 	}
 {{else}}
-	switch strings.ToLower(v) {
-	{{range .Values -}}
-	case strings.ToLower("{{.Name}}"):
-		return {{.PublicName}}, nil
-	{{end}}
+	if val, ok := _{{.Type}}ParseMap[strings.ToLower(v)]; ok {
+		return val, nil
 	}
 {{end}}
 	return {{.Type | title}}{}, fmt.Errorf("invalid {{.Type}}: %s", v)
@@ -91,7 +102,7 @@ func Must{{.Type | title}}(v string) {{.Type | title}} {
 
 {{if .GenerateGetter -}}
 // Get{{.Type | title}}ByID gets the correspondent {{.Type}} enum value by its ID (raw integer value)
-func Get{{.Type | title}}ByID(v int) ({{.Type | title}}, error) {
+func Get{{.Type | title}}ByID(v {{if .UnderlyingType}}{{.UnderlyingType}}{{else}}int{{end}}) ({{.Type | title}}, error) {
 	switch v {
 	{{range .Values -}}
 	case {{.Index}}:
@@ -109,22 +120,18 @@ var (
 {{end -}}
 )
 
-// {{.Type | title}}Values returns all possible enum values
-func {{.Type | title}}Values() []{{.Type | title}} {
-	return []{{.Type | title}}{
-	{{range .Values -}}
-		{{.PublicName}},
-	{{end -}}
-	}
+// {{.Type | title}}Values contains all possible enum values
+var {{.Type | title}}Values = []{{.Type | title}}{
+{{range .Values -}}
+	{{.PublicName}},
+{{end -}}
 }
 
-// {{.Type | title}}Names returns all possible enum names
-func {{.Type | title}}Names() []string {
-	return []string{
-	{{range .Values -}}
-		"{{if $.LowerCase}}{{.Name | ToLower}}{{else}}{{.Name}}{{end}}",
-	{{end -}}
-	}
+// {{.Type | title}}Names contains all possible enum names
+var {{.Type | title}}Names = []string{
+{{range .Values -}}
+	"{{if $.LowerCase}}{{.Name | ToLower}}{{else}}{{.Name}}{{end}}",
+{{end -}}
 }
 
 // {{.Type | title}}Iter returns a function compatible with Go 1.23's range-over-func syntax.
@@ -136,7 +143,7 @@ func {{.Type | title}}Names() []string {
 //
 func {{.Type | title}}Iter() func(yield func({{.Type | title}}) bool) {
 	return func(yield func({{.Type | title}}) bool) {
-		for _, v := range {{.Type | title}}Values() {
+		for _, v := range {{.Type | title}}Values {
 			if !yield(v) {
 				break
 			}
@@ -148,7 +155,7 @@ func {{.Type | title}}Iter() func(yield func({{.Type | title}}) bool) {
 // for the original enum constants. They are intentionally placed in a var block
 // that is compiled away by the Go compiler.
 var _ = func() bool {
-	var _ {{.Type}} = 0
+	var _ {{.Type}} = {{if .UnderlyingType}}{{.Type}}(0){{else}}0{{end}}
 	{{range .Values -}}
 	// This avoids "defined but not used" linter error for {{.PrivateName}}
 	var _ {{$.Type}} = {{.PrivateName}}

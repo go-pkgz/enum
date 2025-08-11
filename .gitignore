@@ -1,3 +1,7 @@
 *.prof
 .idea
-mise.toml
+coverage.out
+coverage.html
+coverage_*.out
+coverage_*.html
+*.coverprofile
