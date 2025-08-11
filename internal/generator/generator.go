@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"text/template"
 	"unicode"
@@ -27,12 +28,44 @@ var titleCaser = cases.Title(language.English, cases.NoLower)
 
 // Generator holds the data needed for enum code generation
 type Generator struct {
-	Type           string         // the private type name (e.g., "status")
-	Path           string         // output directory path
-	values         map[string]int // const values found
-	pkgName        string         // package name from source file
-	lowerCase      bool           // use lower case for marshal/unmarshal
-	generateGetter bool           // generate getter methods for enum values
+	Type           string                 // the private type name (e.g., "status")
+	Path           string                 // output directory path
+	values         map[string]*constValue // const values found with metadata
+	pkgName        string                 // package name from source file
+	lowerCase      bool                   // use lower case for marshal/unmarshal
+	generateGetter bool                   // generate getter methods for enum values
+	underlyingType string                 // underlying type (e.g., "uint8", "int", etc.)
+}
+
+// constValue holds metadata about a const during parsing
+type constValue struct {
+	value int       // the numeric value
+	pos   token.Pos // source position for ordering
+}
+
+// constExprType represents the type of constant expression
+type constExprType int
+
+const (
+	exprTypeNone   constExprType = iota // no expression type determined yet
+	exprTypePlain                       // plain value without iota
+	exprTypeIota                        // plain iota
+	exprTypeIotaOp                      // iota with operation (e.g., iota + 1)
+)
+
+// iotaOperation encapsulates a binary operation with iota
+type iotaOperation struct {
+	op         token.Token // operation type (ADD, SUB, MUL, QUO)
+	operand    int         // the non-iota operand
+	iotaOnLeft bool        // whether iota is on the left side
+}
+
+// constParseState holds the state while parsing a const block
+type constParseState struct {
+	iotaVal      int            // current iota value for this const block
+	lastExprType constExprType  // type of the last expression
+	lastValue    int            // the last computed value
+	iotaOp       *iotaOperation // current iota operation if any
 }
 
 // Value represents a single enum value
@@ -55,7 +88,7 @@ func New(typeName, path string) (*Generator, error) {
 	return &Generator{
 		Type:   typeName,
 		Path:   path,
-		values: make(map[string]int),
+		values: make(map[string]*constValue),
 	}, nil
 }
 
@@ -97,105 +130,200 @@ func (g *Generator) Parse(dir string) error {
 
 // parseFile processes a single file for enum declarations
 func (g *Generator) parseFile(file *ast.File) {
+	// first pass: look for the type declaration to get underlying type
+	g.extractUnderlyingType(file)
 
-	parseConstBlock := func(decl *ast.GenDecl) {
-		// extracts enum values from a const block
-		var iotaVal int
-		var lastExprWasIota bool
-		var lastExplicitVal int
-		var iotaBaseValue int  // base value for iota (e.g., 1 in "iota + 1")
-		var iotaStarted bool   // whether we've encountered an iota expression
-		var hasIotaOffset bool // whether we have an offset for iota
-
-		for _, spec := range decl.Specs {
-			vspec, ok := spec.(*ast.ValueSpec)
-			if !ok || len(vspec.Names) == 0 {
-				continue
-			}
-
-			// check if first name has our type prefix
-			if !strings.HasPrefix(vspec.Names[0].Name, g.Type) {
-				continue
-			}
-
-			// process all names in this spec
-			for i, name := range vspec.Names {
-				if name.Name == "_" { // skip placeholder values
-					continue
-				}
-
-				// process value based on expression
-				switch {
-				case i < len(vspec.Values) && vspec.Values[i] != nil:
-					// there's a value expression, try to extract the actual value
-					switch expr := vspec.Values[i].(type) {
-					case *ast.Ident:
-						if expr.Name == "iota" {
-							// the expression is an iota identifier
-							g.values[name.Name] = iotaVal
-							lastExprWasIota = true
-							iotaStarted = true
-							hasIotaOffset = false // Reset offset for plain iota
-						}
-					case *ast.BasicLit:
-						// try to extract literal value
-						if val, err := convertLiteralToInt(expr); err == nil {
-							g.values[name.Name] = val
-							lastExplicitVal = val
-							lastExprWasIota = false
-							iotaStarted = false // Reset iota tracking for non-iota expressions
-							hasIotaOffset = false
-						}
-					case *ast.BinaryExpr:
-						// handle binary expressions like iota + 1
-						val, usesIota, _, err := evaluateBinaryExpr(expr, iotaVal)
-						if err == nil {
-							g.values[name.Name] = val
-							lastExplicitVal = val
-							if usesIota {
-								lastExprWasIota = true
-								iotaStarted = true
-								if !hasIotaOffset { // Only set offset on first occurrence
-									// iotaOffset no longer needed
-									iotaBaseValue = val - iotaVal // Calculate base value
-									hasIotaOffset = true
-								}
-							} else {
-								lastExprWasIota = false
-								iotaStarted = false
-								hasIotaOffset = false
-							}
-						}
-					}
-				case lastExprWasIota:
-					// if previous expr was iota and this one has no value, assume iota continues
-					if hasIotaOffset && iotaStarted {
-						// If we have an offset (iota + N), apply the same formula
-						g.values[name.Name] = iotaBaseValue + iotaVal
-					} else {
-						g.values[name.Name] = iotaVal
-					}
-				default:
-					// if this constant omits its expression following a non-iota value,
-					// it repeats the previous expression (which means it gets the same value)
-					g.values[name.Name] = lastExplicitVal
-				}
-
-				iotaVal++
-			}
-		}
-	}
-
+	// second pass: extract const values
 	ast.Inspect(file, func(n ast.Node) bool {
 		if decl, ok := n.(*ast.GenDecl); ok && decl.Tok == token.CONST {
-			parseConstBlock(decl)
+			g.parseConstBlock(decl)
 		}
 		return true
 	})
 }
 
-// convertLiteralToInt tries to convert a basic literal to an integer value
-func convertLiteralToInt(lit *ast.BasicLit) (int, error) {
+// extractUnderlyingType finds the type declaration and extracts its underlying type
+func (g *Generator) extractUnderlyingType(file *ast.File) {
+	ast.Inspect(file, func(n ast.Node) bool {
+		if decl, ok := n.(*ast.GenDecl); ok && decl.Tok == token.TYPE {
+			for _, spec := range decl.Specs {
+				if tspec, ok := spec.(*ast.TypeSpec); ok && tspec.Name.Name == g.Type {
+					// found our type, extract the underlying type
+					if ident, ok := tspec.Type.(*ast.Ident); ok {
+						g.underlyingType = ident.Name
+					}
+				}
+			}
+		}
+		return true
+	})
+}
+
+// parseConstBlock extracts enum values from a const block
+func (g *Generator) parseConstBlock(decl *ast.GenDecl) {
+	state := &constParseState{}
+
+	for _, spec := range decl.Specs {
+		vspec, ok := spec.(*ast.ValueSpec)
+		if !ok || len(vspec.Names) == 0 {
+			continue
+		}
+
+		// process all names in this spec
+		for i, name := range vspec.Names {
+			// skip underscore placeholders
+			if name.Name == "_" {
+				continue
+			}
+
+			// only process names with our type prefix
+			if !strings.HasPrefix(name.Name, g.Type) {
+				continue
+			}
+
+			// process value based on expression
+			enumValue := g.processConstValue(vspec, i, state)
+
+			// store the value with its position
+			g.values[name.Name] = &constValue{
+				value: enumValue,
+				pos:   name.Pos(),
+			}
+		}
+
+		// always increment iota after each value spec
+		state.iotaVal++
+	}
+}
+
+// processConstValue extracts the value for a single constant
+func (g *Generator) processConstValue(vspec *ast.ValueSpec, index int, state *constParseState) int {
+	// handle explicit expression if present
+	if index < len(vspec.Values) && vspec.Values[index] != nil {
+		return g.processExplicitValue(vspec.Values[index], state)
+	}
+
+	// handle implicit expression based on previous state
+	return g.processImplicitValue(state)
+}
+
+// processExplicitValue handles a constant with an explicit value expression
+func (g *Generator) processExplicitValue(expr ast.Expr, state *constParseState) int {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		if e.Name == "iota" {
+			state.lastExprType = exprTypeIota
+			state.lastValue = state.iotaVal
+			state.iotaOp = nil
+			return state.iotaVal
+		}
+	case *ast.BasicLit:
+		if val, err := ConvertLiteralToInt(e); err == nil {
+			state.lastExprType = exprTypePlain
+			state.lastValue = val
+			state.iotaOp = nil
+			return val
+		}
+	case *ast.BinaryExpr:
+		if val, op := g.processBinaryExpr(e, state); op != nil {
+			state.lastExprType = exprTypeIotaOp
+			state.lastValue = val
+			state.iotaOp = op
+			return val
+		} else if val != 0 || op == nil {
+			// plain binary expression without iota
+			state.lastExprType = exprTypePlain
+			state.lastValue = val
+			state.iotaOp = nil
+			return val
+		}
+	}
+	return 0
+}
+
+// processImplicitValue handles a constant without an explicit value
+func (g *Generator) processImplicitValue(state *constParseState) int {
+	switch state.lastExprType {
+	case exprTypeIota:
+		// plain iota continues
+		return state.iotaVal
+	case exprTypeIotaOp:
+		// apply the operation with current iota
+		return g.applyIotaOperation(state.iotaOp, state.iotaVal)
+	default:
+		// repeat last plain value
+		return state.lastValue
+	}
+}
+
+// processBinaryExpr processes a binary expression and returns the value and operation if it uses iota
+func (g *Generator) processBinaryExpr(expr *ast.BinaryExpr, state *constParseState) (int, *iotaOperation) {
+	val, usesIota, err := EvaluateBinaryExpr(expr, state.iotaVal)
+	if err != nil {
+		return 0, nil
+	}
+
+	if !usesIota {
+		return val, nil
+	}
+
+	// extract operation details for iota expressions
+	op := &iotaOperation{op: expr.Op}
+
+	if ident, ok := expr.X.(*ast.Ident); ok && ident.Name == "iota" {
+		// iota op value
+		op.iotaOnLeft = true
+		if lit, ok := expr.Y.(*ast.BasicLit); ok {
+			if opVal, err := ConvertLiteralToInt(lit); err == nil {
+				op.operand = opVal
+			}
+		}
+	} else if ident, ok := expr.Y.(*ast.Ident); ok && ident.Name == "iota" {
+		// value op iota
+		op.iotaOnLeft = false
+		if lit, ok := expr.X.(*ast.BasicLit); ok {
+			if opVal, err := ConvertLiteralToInt(lit); err == nil {
+				op.operand = opVal
+			}
+		}
+	}
+
+	return val, op
+}
+
+// applyIotaOperation applies a stored operation to a new iota value
+func (g *Generator) applyIotaOperation(op *iotaOperation, iotaVal int) int {
+	if op == nil {
+		return iotaVal
+	}
+
+	switch op.op {
+	case token.ADD:
+		return iotaVal + op.operand
+	case token.SUB:
+		if op.iotaOnLeft {
+			return iotaVal - op.operand
+		}
+		return op.operand - iotaVal
+	case token.MUL:
+		return iotaVal * op.operand
+	case token.QUO:
+		if op.operand != 0 {
+			if op.iotaOnLeft {
+				return iotaVal / op.operand
+			}
+			// note: integer division by iota could be 0 for large iota values
+			if iotaVal != 0 {
+				return op.operand / iotaVal
+			}
+		}
+		return 0 // division by zero
+	}
+	return iotaVal
+}
+
+// ConvertLiteralToInt tries to convert a basic literal to an integer value
+func ConvertLiteralToInt(lit *ast.BasicLit) (int, error) {
 	switch lit.Kind {
 	case token.INT:
 		var val int
@@ -203,19 +331,34 @@ func convertLiteralToInt(lit *ast.BasicLit) (int, error) {
 			return val, nil
 		}
 		return 0, fmt.Errorf("cannot convert %s to int", lit.Value)
+	case token.CHAR:
+		// handle character literals like 'A'
+		// strconv.Unquote handles all escape sequences properly
+		unquoted, err := strconv.Unquote(lit.Value)
+		if err != nil {
+			return 0, fmt.Errorf("cannot parse character literal %s: %w", lit.Value, err)
+		}
+		// use utf8.DecodeRuneInString for safer UTF-8 handling
+		r, size := utf8.DecodeRuneInString(unquoted)
+		if r == utf8.RuneError {
+			return 0, fmt.Errorf("invalid UTF-8 in character literal %s", lit.Value)
+		}
+		if size != len(unquoted) {
+			return 0, fmt.Errorf("character literal %s contains multiple characters", lit.Value)
+		}
+		return int(r), nil
 	default:
 		return 0, fmt.Errorf("unsupported literal kind: %v", lit.Kind)
 	}
 }
 
-// evaluateBinaryExpr evaluates binary expressions like iota + 1
+// EvaluateBinaryExpr evaluates binary expressions like iota + 1
 // Returns:
 // - value: the computed value of the expression
 // - usesIota: whether the expression uses iota
-// - offset: the offset value if the expression is in the form of "iota + N" or "iota - N"
 // - error: any error encountered
-func evaluateBinaryExpr(expr *ast.BinaryExpr, iotaVal int) (value int, usesIota bool, offset int, err error) {
-	// Handle left side of expression
+func EvaluateBinaryExpr(expr *ast.BinaryExpr, iotaVal int) (value int, usesIota bool, err error) {
+	// handle left side of expression
 	var leftVal int
 	var leftIsIota bool
 
@@ -225,19 +368,19 @@ func evaluateBinaryExpr(expr *ast.BinaryExpr, iotaVal int) (value int, usesIota 
 			leftVal = iotaVal
 			leftIsIota = true
 		} else {
-			return 0, false, 0, fmt.Errorf("unsupported identifier in binary expression: %s", left.Name)
+			return 0, false, fmt.Errorf("unsupported identifier in binary expression: %s", left.Name)
 		}
 	case *ast.BasicLit:
 		var err error
-		leftVal, err = convertLiteralToInt(left)
+		leftVal, err = ConvertLiteralToInt(left)
 		if err != nil {
-			return 0, false, 0, err
+			return 0, false, err
 		}
 	default:
-		return 0, false, 0, fmt.Errorf("unsupported expression type on left side: %T", left)
+		return 0, false, fmt.Errorf("unsupported expression type on left side: %T", left)
 	}
 
-	// Handle right side of expression
+	// handle right side of expression
 	var rightVal int
 	var rightIsIota bool
 
@@ -247,32 +390,22 @@ func evaluateBinaryExpr(expr *ast.BinaryExpr, iotaVal int) (value int, usesIota 
 			rightVal = iotaVal
 			rightIsIota = true
 		} else {
-			return 0, false, 0, fmt.Errorf("unsupported identifier in binary expression: %s", right.Name)
+			return 0, false, fmt.Errorf("unsupported identifier in binary expression: %s", right.Name)
 		}
 	case *ast.BasicLit:
 		var err error
-		rightVal, err = convertLiteralToInt(right)
+		rightVal, err = ConvertLiteralToInt(right)
 		if err != nil {
-			return 0, false, 0, err
+			return 0, false, err
 		}
 	default:
-		return 0, false, 0, fmt.Errorf("unsupported expression type on right side: %T", right)
+		return 0, false, fmt.Errorf("unsupported expression type on right side: %T", right)
 	}
 
-	// Check if expression uses iota
+	// check if expression uses iota
 	usesIota = leftIsIota || rightIsIota
 
-	// Calculate offset for expressions like "iota + N" or "iota - N"
-	switch {
-	case expr.Op == token.ADD && leftIsIota && !rightIsIota:
-		offset = rightVal
-	case expr.Op == token.ADD && rightIsIota && !leftIsIota:
-		offset = leftVal
-	case expr.Op == token.SUB && leftIsIota && !rightIsIota:
-		offset = -rightVal
-	}
-
-	// Evaluate the expression based on the operator
+	// evaluate the expression based on the operator
 	switch expr.Op {
 	case token.ADD:
 		value = leftVal + rightVal
@@ -282,14 +415,14 @@ func evaluateBinaryExpr(expr *ast.BinaryExpr, iotaVal int) (value int, usesIota 
 		value = leftVal * rightVal
 	case token.QUO:
 		if rightVal == 0 {
-			return 0, false, 0, fmt.Errorf("division by zero")
+			return 0, false, fmt.Errorf("division by zero")
 		}
 		value = leftVal / rightVal
 	default:
-		return 0, false, 0, fmt.Errorf("unsupported binary operator: %v", expr.Op)
+		return 0, false, fmt.Errorf("unsupported binary operator: %v", expr.Op)
 	}
 
-	return value, usesIota, offset, nil
+	return value, usesIota, nil
 }
 
 // Generate creates the enum code file. it takes the const values found in Parse and creates
@@ -302,17 +435,15 @@ func evaluateBinaryExpr(expr *ast.BinaryExpr, iotaVal int) (value int, usesIota 
 //   - exported const values (e.g., StatusActive)
 //   - helper functions to get all values and names
 func (g *Generator) Generate() error {
-	values := make([]Value, 0, len(g.values))
-	names := make([]string, 0, len(g.values))
 	// to avoid an undefined behavior for a Getter, we need to check if the values are unique
 	if g.generateGetter {
 		valuesCounter := make(map[int][]string)
 		// check if multiple names exist for the same value
-		for name, val := range g.values {
-			if _, ok := valuesCounter[val]; !ok {
-				valuesCounter[val] = []string{}
+		for name, cv := range g.values {
+			if _, ok := valuesCounter[cv.value]; !ok {
+				valuesCounter[cv.value] = []string{}
 			}
-			valuesCounter[val] = append(valuesCounter[val], name)
+			valuesCounter[cv.value] = append(valuesCounter[cv.value], name)
 		}
 		var errs []error
 		for val, names := range valuesCounter {
@@ -326,15 +457,26 @@ func (g *Generator) Generate() error {
 			return errors.Join(errs...)
 		}
 	}
-	// collect names for stable ordering
-	for name := range g.values {
-		names = append(names, name)
+
+	// collect entries for sorting by position
+	type entry struct {
+		name string
+		cv   *constValue
 	}
-	sort.Strings(names)
+	entries := make([]entry, 0, len(g.values))
+	for name, cv := range g.values {
+		entries = append(entries, entry{name: name, cv: cv})
+	}
+
+	// sort by source position to preserve declaration order
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].cv.pos < entries[j].cv.pos
+	})
 
 	// create values with proper name transformations for each case
-	for _, name := range names {
-		privateName := name
+	values := make([]Value, 0, len(entries))
+	for _, e := range entries {
+		privateName := e.name
 		// strip type prefix to get just the value name part (e.g., "Active" from "statusActive")
 		nameWithoutPrefix := strings.TrimPrefix(privateName, g.Type)
 		// create exported name by adding title-cased type (e.g., "StatusActive")
@@ -343,7 +485,7 @@ func (g *Generator) Generate() error {
 			PrivateName: privateName,
 			PublicName:  publicName,
 			Name:        titleCaser.String(nameWithoutPrefix),
-			Index:       g.values[name],
+			Index:       e.cv.value,
 		})
 	}
 
@@ -366,12 +508,14 @@ func (g *Generator) Generate() error {
 		Package        string
 		LowerCase      bool
 		GenerateGetter bool
+		UnderlyingType string
 	}{
 		Type:           g.Type,
 		Values:         values,
 		Package:        pkgName,
 		LowerCase:      g.lowerCase,
 		GenerateGetter: g.generateGetter,
+		UnderlyingType: g.underlyingType,
 	}
 
 	// execute template

@@ -10,7 +10,10 @@
 - Case-sensitive or case-insensitive string representations
 - Panic-free parsing with error handling
 - Must-style parsing variants for convenience
-- Easy value enumeration with Values() and Names() functions
+- Declaration order preservation (enums maintain source code order, not alphabetical)
+- Type fidelity preservation (generated code uses the same underlying type as your enum)
+- Optimized parsing with O(1) map-based lookups
+- Smart SQL null handling (uses zero value when available, errors otherwise)
 - Generated code is fully tested and documented
 - No external runtime dependencies
 - Supports Go 1.23's range-over-func iteration
@@ -109,10 +112,12 @@ The generator creates a new type with the following features:
 
 - String representation (implements `fmt.Stringer`)
 - Text marshaling (implements `encoding.TextMarshaler` and `encoding.TextUnmarshaler`)
-- Parse function with error handling (`ParseStatus`)
+- SQL support (implements `database/sql/driver.Valuer` and `sql.Scanner`)
+- Parse function with error handling (`ParseStatus`) - uses efficient O(1) map lookup
 - Must-style parse function that panics on error (`MustStatus`)
-- All possible values slice (`StatusValues`)
-- All possible names slice (`StatusNames`)
+- All possible values as package variable (`StatusValues`) - preserves declaration order
+- All possible names as package variable (`StatusNames`) - preserves declaration order
+- Index method to get underlying integer value (`Status.Index()`)
 - Go 1.23 iterator support (`StatusIter()`) for range-over-func syntax
 - Public constants for each value (`StatusActive`, `StatusInactive`, etc.) - note that these are capitalized versions of your original constants
 
@@ -150,6 +155,30 @@ if err != nil {
 // or use Must variant if you're sure the value is valid
 status := MustStatus("active") // panics if invalid
 ```
+
+### SQL Database Support
+
+The generated enums implement `database/sql/driver.Valuer` and `sql.Scanner` interfaces for seamless database integration:
+
+```go
+// Scanning from database
+var s Status
+err := db.QueryRow("SELECT status FROM users WHERE id = ?", userID).Scan(&s)
+
+// Writing to database
+_, err = db.Exec("UPDATE users SET status = ? WHERE id = ?", StatusActive, userID)
+
+// Handling NULL values
+// If the enum has a zero value (value = 0), NULL will scan to that value
+// Otherwise, scanning NULL returns an error
+```
+
+### Performance Characteristics
+
+- **Parsing**: O(1) constant time using map lookup (previously O(n) with switch statement)
+- **Values/Names access**: Zero allocation - returns pre-computed package variables
+- **Memory efficient**: Single shared instance for each enum value
+- **Declaration order**: Preserved from source code, not alphabetically sorted
 
 ## Contributing
 

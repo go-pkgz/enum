@@ -166,4 +166,82 @@ const (
 		main()
 		assert.Equal(t, 1, exitCode)
 	})
+
+	t.Run("parse error - no matching constants", func(t *testing.T) {
+		// reset flags for this run
+		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
+		origArgs := os.Args
+		origWd, err := os.Getwd()
+		require.NoError(t, err)
+		defer func() {
+			os.Args = origArgs
+			require.NoError(t, os.Chdir(origWd))
+		}()
+
+		tmpDir := t.TempDir()
+
+		// create a file without matching constants
+		err = os.WriteFile(filepath.Join(tmpDir, "status.go"), []byte(`
+package test
+type status uint8
+const (
+	SomethingElse = 1
+)
+`), 0o644)
+		require.NoError(t, err)
+
+		// change working directory to temp dir
+		require.NoError(t, os.Chdir(tmpDir))
+
+		var exitCode int
+		osExit = func(code int) { exitCode = code }
+
+		os.Args = []string{"app", "-type", "status"}
+		main()
+		assert.Equal(t, 1, exitCode)
+	})
+
+	t.Run("generate error - invalid path", func(t *testing.T) {
+		// reset flags for this run
+		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
+		origArgs := os.Args
+		origWd, err := os.Getwd()
+		require.NoError(t, err)
+		defer func() {
+			os.Args = origArgs
+			require.NoError(t, os.Chdir(origWd))
+		}()
+
+		tmpDir := t.TempDir()
+
+		// create a valid file
+		err = os.WriteFile(filepath.Join(tmpDir, "status.go"), []byte(`
+package test
+type status uint8
+const (
+	statusActive status = iota
+	statusInactive
+)
+`), 0o644)
+		require.NoError(t, err)
+
+		// change working directory to temp dir
+		require.NoError(t, os.Chdir(tmpDir))
+
+		// make the directory read-only to cause generate to fail
+		require.NoError(t, os.Chmod(tmpDir, 0o555))
+		defer func() {
+			// restore permissions so cleanup can work
+			os.Chmod(tmpDir, 0o755)
+		}()
+
+		var exitCode int
+		osExit = func(code int) { exitCode = code }
+
+		os.Args = []string{"app", "-type", "status"}
+		main()
+		assert.Equal(t, 1, exitCode)
+	})
 }

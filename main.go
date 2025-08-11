@@ -16,8 +16,8 @@ var osExit = os.Exit
 func main() {
 	typeFlag := flag.String("type", "", "type name (must be lowercase)")
 	pathFlag := flag.String("path", "", "output directory path (default: same as source)")
-	lowerFlag := flag.Bool("lower", false, "use lower case for marshaled/unmarshaled values")
-	getterFlag := flag.Bool("getter", false, "generate getter methods for enum values")
+	lowerFlag := flag.Bool("lower", false, "use lowercase for string representation (e.g., 'active' instead of 'Active')")
+	getterFlag := flag.Bool("getter", false, "generate GetByID function to retrieve enum by integer value (requires unique IDs)")
 	helpFlag := flag.Bool("help", false, "show usage")
 	versionFlag := flag.Bool("version", false, "print version")
 	flag.Parse()
@@ -66,9 +66,7 @@ func main() {
 }
 
 func showUsage() {
-	fmt.Printf("usage: enumgen -type <type> [-path <path>] [-lower] [-version]\n")
-	fmt.Printf("  -type <type>    type name (must be lowercase)\n")
-	fmt.Printf("  -path <path>    output directory path (default: same as source)\n")
-	fmt.Printf("  -lower          use lower case for marshaled/unmarshaled values\n")
-	fmt.Printf("  -version        print version\n")
+	fmt.Printf("usage: enum [flags]\n\n")
+	fmt.Printf("Flags:\n")
+	flag.PrintDefaults()
 }
