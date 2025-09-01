@@ -259,6 +259,7 @@ func (g *Generator) processExplicitValue(expr ast.Expr, state *constParseState) 
 					state.iotaOp = nil
 					return -val
 				}
+				// if conversion fails, fall through to return 0 (same as BasicLit case)
 			}
 		}
 	}
