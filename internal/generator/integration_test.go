@@ -397,6 +397,11 @@ func TestRuntimeIntegration(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
+	// skip in CI due to timeout issues with downloading dependencies
+	if os.Getenv("CI") != "" {
+		t.Skip("skipping runtime integration test in CI")
+	}
+
 	// 1. Build the enum binary
 	binPath := filepath.Join(t.TempDir(), "enum")
 	cmd := exec.Command("go", "build", "-o", binPath, "github.com/go-pkgz/enum")
