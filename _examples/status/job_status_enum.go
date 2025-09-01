@@ -2,18 +2,20 @@
 package status
 
 import (
-	"fmt"
-
 	"database/sql/driver"
+	"fmt"
 )
 
 // JobStatus is the exported type for the enum
 type JobStatus struct {
 	name  string
-	value int
+	value uint8
 }
 
 func (e JobStatus) String() string { return e.name }
+
+// Index returns the underlying integer value
+func (e JobStatus) Index() uint8 { return e.value }
 
 // MarshalText implements encoding.TextMarshaler
 func (e JobStatus) MarshalText() ([]byte, error) {
@@ -35,8 +37,15 @@ func (e JobStatus) Value() (driver.Value, error) {
 // Scan implements the sql.Scanner interface
 func (e *JobStatus) Scan(value interface{}) error {
 	if value == nil {
-		*e = JobStatusValues()[0]
-		return nil
+		// try to find zero value
+		for _, v := range JobStatusValues {
+			if v.Index() == 0 {
+				*e = v
+				return nil
+			}
+		}
+		// no zero value found, return error
+		return fmt.Errorf("cannot scan nil into JobStatus: no zero value defined")
 	}
 
 	str, ok := value.(string)
@@ -57,19 +66,19 @@ func (e *JobStatus) Scan(value interface{}) error {
 	return nil
 }
 
+// _jobStatusParseMap is used for efficient string to enum conversion
+var _jobStatusParseMap = map[string]JobStatus{
+	"unknown":  JobStatusUnknown,
+	"active":   JobStatusActive,
+	"inactive": JobStatusInactive,
+	"blocked":  JobStatusBlocked,
+}
+
 // ParseJobStatus converts string to jobStatus enum value
 func ParseJobStatus(v string) (JobStatus, error) {
 
-	switch v {
-	case "active":
-		return JobStatusActive, nil
-	case "blocked":
-		return JobStatusBlocked, nil
-	case "inactive":
-		return JobStatusInactive, nil
-	case "unknown":
-		return JobStatusUnknown, nil
-
+	if val, ok := _jobStatusParseMap[v]; ok {
+		return val, nil
 	}
 
 	return JobStatus{}, fmt.Errorf("invalid jobStatus: %s", v)
@@ -85,46 +94,42 @@ func MustJobStatus(v string) JobStatus {
 }
 
 // GetJobStatusByID gets the correspondent jobStatus enum value by its ID (raw integer value)
-func GetJobStatusByID(v int) (JobStatus, error) {
+func GetJobStatusByID(v uint8) (JobStatus, error) {
 	switch v {
-	case 1:
-		return JobStatusActive, nil
-	case 3:
-		return JobStatusBlocked, nil
-	case 2:
-		return JobStatusInactive, nil
 	case 0:
 		return JobStatusUnknown, nil
+	case 1:
+		return JobStatusActive, nil
+	case 2:
+		return JobStatusInactive, nil
+	case 3:
+		return JobStatusBlocked, nil
 	}
 	return JobStatus{}, fmt.Errorf("invalid jobStatus value: %d", v)
 }
 
 // Public constants for jobStatus values
 var (
-	JobStatusActive   = JobStatus{name: "active", value: 1}
-	JobStatusBlocked  = JobStatus{name: "blocked", value: 3}
-	JobStatusInactive = JobStatus{name: "inactive", value: 2}
 	JobStatusUnknown  = JobStatus{name: "unknown", value: 0}
+	JobStatusActive   = JobStatus{name: "active", value: 1}
+	JobStatusInactive = JobStatus{name: "inactive", value: 2}
+	JobStatusBlocked  = JobStatus{name: "blocked", value: 3}
 )
 
-// JobStatusValues returns all possible enum values
-func JobStatusValues() []JobStatus {
-	return []JobStatus{
-		JobStatusActive,
-		JobStatusBlocked,
-		JobStatusInactive,
-		JobStatusUnknown,
-	}
+// JobStatusValues contains all possible enum values
+var JobStatusValues = []JobStatus{
+	JobStatusUnknown,
+	JobStatusActive,
+	JobStatusInactive,
+	JobStatusBlocked,
 }
 
-// JobStatusNames returns all possible enum names
-func JobStatusNames() []string {
-	return []string{
-		"active",
-		"blocked",
-		"inactive",
-		"unknown",
-	}
+// JobStatusNames contains all possible enum names
+var JobStatusNames = []string{
+	"unknown",
+	"active",
+	"inactive",
+	"blocked",
 }
 
 // JobStatusIter returns a function compatible with Go 1.23's range-over-func syntax.
@@ -135,7 +140,7 @@ func JobStatusNames() []string {
 //	}
 func JobStatusIter() func(yield func(JobStatus) bool) {
 	return func(yield func(JobStatus) bool) {
-		for _, v := range JobStatusValues() {
+		for _, v := range JobStatusValues {
 			if !yield(v) {
 				break
 			}
@@ -147,14 +152,14 @@ func JobStatusIter() func(yield func(JobStatus) bool) {
 // for the original enum constants. They are intentionally placed in a var block
 // that is compiled away by the Go compiler.
 var _ = func() bool {
-	var _ jobStatus = 0
-	// This avoids "defined but not used" linter error for jobStatusActive
-	var _ jobStatus = jobStatusActive
-	// This avoids "defined but not used" linter error for jobStatusBlocked
-	var _ jobStatus = jobStatusBlocked
-	// This avoids "defined but not used" linter error for jobStatusInactive
-	var _ jobStatus = jobStatusInactive
+	var _ jobStatus = jobStatus(0)
 	// This avoids "defined but not used" linter error for jobStatusUnknown
 	var _ jobStatus = jobStatusUnknown
+	// This avoids "defined but not used" linter error for jobStatusActive
+	var _ jobStatus = jobStatusActive
+	// This avoids "defined but not used" linter error for jobStatusInactive
+	var _ jobStatus = jobStatusInactive
+	// This avoids "defined but not used" linter error for jobStatusBlocked
+	var _ jobStatus = jobStatusBlocked
 	return true
 }()

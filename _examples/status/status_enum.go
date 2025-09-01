@@ -4,9 +4,6 @@ package status
 import (
 	"database/sql/driver"
 	"fmt"
-
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/bsontype"
 )
 
 // Status is the exported type for the enum
@@ -65,25 +62,6 @@ func (e *Status) Scan(value interface{}) error {
 		return err
 	}
 
-	*e = val
-	return nil
-}
-
-// MarshalBSONValue implements bson.ValueMarshaler and encodes the enum as a string
-func (e Status) MarshalBSONValue() (bsontype.Type, []byte, error) {
-	return bson.MarshalValue(e.String())
-}
-
-// UnmarshalBSONValue implements bson.ValueUnmarshaler and decodes the enum from a string
-func (e *Status) UnmarshalBSONValue(t bsontype.Type, data []byte) error {
-	var s string
-	if err := bson.UnmarshalValue(t, data, &s); err != nil {
-		return err
-	}
-	val, err := ParseStatus(s)
-	if err != nil {
-		return err
-	}
 	*e = val
 	return nil
 }
