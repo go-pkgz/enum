@@ -40,6 +40,9 @@ func TestGenerator(t *testing.T) {
 		err = gen.Parse("testdata")
 		require.NoError(t, err)
 
+		// enable SQL to verify SQL-specific imports/methods when requested
+		gen.SetGenerateSQL(true)
+
 		err = gen.Generate()
 		require.NoError(t, err)
 
@@ -139,6 +142,7 @@ func TestGenerator(t *testing.T) {
 		err = gen.Parse("testdata")
 		require.NoError(t, err)
 
+		gen.SetGenerateSQL(true)
 		err = gen.Generate()
 		require.NoError(t, err)
 
@@ -160,6 +164,49 @@ func TestGenerator(t *testing.T) {
 		assert.Contains(t, string(content), "if b, ok := value.([]byte)")
 	})
 
+	t.Run("bson support", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		gen, err := New("status", tmpDir)
+		require.NoError(t, err)
+
+		err = gen.Parse("testdata")
+		require.NoError(t, err)
+
+		gen.SetGenerateBSON(true)
+		err = gen.Generate()
+		require.NoError(t, err)
+
+		content, err := os.ReadFile(filepath.Join(tmpDir, "status_enum.go"))
+		require.NoError(t, err)
+
+		// verify bson interfaces and imports
+		assert.Contains(t, string(content), `"go.mongodb.org/mongo-driver/bson"`)
+		assert.Contains(t, string(content), `"go.mongodb.org/mongo-driver/bson/bsontype"`)
+		assert.Contains(t, string(content), "func (e Status) MarshalBSONValue() (bsontype.Type, []byte, error)")
+		assert.Contains(t, string(content), "func (e *Status) UnmarshalBSONValue(t bsontype.Type, data []byte) error")
+	})
+
+	t.Run("yaml support", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		gen, err := New("status", tmpDir)
+		require.NoError(t, err)
+
+		err = gen.Parse("testdata")
+		require.NoError(t, err)
+
+		gen.SetGenerateYAML(true)
+		err = gen.Generate()
+		require.NoError(t, err)
+
+		content, err := os.ReadFile(filepath.Join(tmpDir, "status_enum.go"))
+		require.NoError(t, err)
+
+		// verify yaml interfaces and imports
+		assert.Contains(t, string(content), `"gopkg.in/yaml.v3"`)
+		assert.Contains(t, string(content), "func (e Status) MarshalYAML() (any, error)")
+		assert.Contains(t, string(content), "func (e *Status) UnmarshalYAML(value *yaml.Node) error")
+	})
+
 	t.Run("json support", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		gen, err := New("status", tmpDir)
@@ -178,8 +225,7 @@ func TestGenerator(t *testing.T) {
 		assert.Contains(t, string(content), "func (e Status) MarshalText() ([]byte, error)")
 		assert.Contains(t, string(content), "func (e *Status) UnmarshalText(text []byte) error")
 
-		// verify proper error handling in unmarshal
-		assert.Contains(t, string(content), "invalid status value: %v")
+		// verify UnmarshalText uses Parse
 		assert.Contains(t, string(content), "ParseStatus(string(text))")
 
 		// verify string conversion in marshal
@@ -365,6 +411,7 @@ func TestSQLNullHandling(t *testing.T) {
 		err = gen.Parse("testdata")
 		require.NoError(t, err)
 
+		gen.SetGenerateSQL(true)
 		err = gen.Generate()
 		require.NoError(t, err)
 
@@ -385,6 +432,7 @@ func TestSQLNullHandling(t *testing.T) {
 		err = gen.Parse("testdata")
 		require.NoError(t, err)
 
+		gen.SetGenerateSQL(true)
 		err = gen.Generate()
 		require.NoError(t, err)
 

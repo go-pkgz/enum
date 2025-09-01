@@ -1,12 +1,13 @@
 # enum [![Build Status](https://github.com/go-pkgz/enum/workflows/build/badge.svg)](https://github.com/go-pkgz/enum/actions) [![Coverage Status](https://coveralls.io/repos/github/go-pkgz/enum/badge.svg?branch=master)](https://coveralls.io/github/go-pkgz/enum?branch=master) [![godoc](https://godoc.org/github.com/go-pkgz/enum?status.svg)](https://godoc.org/github.com/go-pkgz/enum)
 
 
-`enum` is a Go package that provides a code generator for type-safe, json/bson/text-marshalable enumerations. It creates idiomatic Go code from simple type definitions, supporting both case-sensitive and case-insensitive string representations.
+`enum` is a Go package that provides a code generator for type-safe, json/text-marshalable enumerations. Optional flags add SQL, BSON (MongoDB), and YAML support. It creates idiomatic Go code from simple type definitions, supporting both case-sensitive and case-insensitive string representations.
 
 ## Features
 
 - Type-safe enum implementations
-- JSON, BSON, SQL and text marshaling/unmarshaling support
+- Text marshaling/unmarshaling (JSON works via TextMarshaler)
+- Optional SQL, BSON (MongoDB), and YAML support via flags
 - Case-sensitive or case-insensitive string representations
 - Panic-free parsing with error handling
 - Must-style parsing variants for convenience
@@ -97,12 +98,17 @@ const (
 go generate ./...
 ```
 
+By default the generated type supports `encoding.TextMarshaler`/`Unmarshaler` (used by `encoding/json`). To include other integrations, enable flags as needed (see below).
+
 ### Generator Options
 
 - `-type` (required): the name of the type to generate enum for (must be lowercase/private)
 - `-path`: output directory path (default: same as source)
-- `-lower`: use lowercase for string representations when marshaling/unmarshaling (affects only the output strings, not the naming pattern)
+- `-lower`: use lowercase for string representations when marshaling/unmarshaling
 - `-getter`: enables the generation of an additional function, `Get{{Type}}ByID`, which attempts to find the corresponding enum element by its underlying integer ID. The `-getter` flag requires enum elements to have unique IDs to prevent undefined behavior.
+- `-sql` (default: off): add SQL support via `database/sql/driver.Valuer` and `sql.Scanner`
+- `-bson` (default: off): add MongoDB BSON support via `MarshalBSONValue`/`UnmarshalBSONValue`
+- `-yaml` (default: off): add YAML support via `gopkg.in/yaml.v3` `Marshaler`/`Unmarshaler`
 - `-version`: print version information
 - `-help`: show usage information
 
@@ -112,7 +118,7 @@ The generator creates a new type with the following features:
 
 - String representation (implements `fmt.Stringer`)
 - Text marshaling (implements `encoding.TextMarshaler` and `encoding.TextUnmarshaler`)
-- SQL support (implements `database/sql/driver.Valuer` and `sql.Scanner`)
+- SQL support when `-sql` is set (implements `database/sql/driver.Valuer` and `sql.Scanner`)
 - Parse function with error handling (`ParseStatus`) - uses efficient O(1) map lookup
 - Must-style parse function that panics on error (`MustStatus`)
 - All possible values as package variable (`StatusValues`) - preserves declaration order
@@ -122,6 +128,38 @@ The generator creates a new type with the following features:
 - Public constants for each value (`StatusActive`, `StatusInactive`, etc.) - note that these are capitalized versions of your original constants
 
 Additionally, if the `-getter` flag is set, a getter function (`GetStatusByID`) will be generated. This function allows retrieving an enum element using its raw integer ID.
+
+### JSON, BSON, YAML
+
+- JSON: works out of the box through `encoding.TextMarshaler`/`Unmarshaler`.
+- BSON (MongoDB): enable `-bson` to generate `MarshalBSONValue`/`UnmarshalBSONValue`; values are stored as strings.
+- YAML: enable `-yaml` to generate `MarshalYAML`/`UnmarshalYAML`; values are encoded as strings.
+
+Example (MongoDB using `-bson`):
+
+```go
+//go:generate go run github.com/go-pkgz/enum@latest -type status -bson -lower
+
+type status uint8
+const (
+    statusUnknown status = iota
+    statusActive
+    statusInactive
+)
+
+// Using mongo-go-driver
+type User struct {
+    ID     primitive.ObjectID `bson:"_id,omitempty"`
+    Status Status             `bson:"status"`
+}
+
+// insert and read
+u := User{Status: StatusActive}
+_, _ = coll.InsertOne(ctx, u) // stores { status: "active" }
+
+var out User
+_ = coll.FindOne(ctx, bson.M{"status": "active"}).Decode(&out) // decodes via UnmarshalBSONValue
+```
 
 ### Case Sensitivity
 
@@ -156,7 +194,7 @@ if err != nil {
 status := MustStatus("active") // panics if invalid
 ```
 
-### SQL Database Support
+### SQL Database Support (with `-sql`)
 
 The generated enums implement `database/sql/driver.Valuer` and `sql.Scanner` interfaces for seamless database integration:
 
