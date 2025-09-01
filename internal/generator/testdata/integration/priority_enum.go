@@ -4,11 +4,10 @@ package integration
 import (
 	"database/sql/driver"
 	"fmt"
-	"strings"
-
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/bsontype"
 	"gopkg.in/yaml.v3"
+	"strings"
 )
 
 // Priority is the exported type for the enum
@@ -138,7 +137,7 @@ func MustPriority(v string) Priority {
 
 // Public constants for priority values
 var (
-	PriorityNone     = Priority{name: "None", value: 0}
+	PriorityNone     = Priority{name: "None", value: -1}
 	PriorityLow      = Priority{name: "Low", value: 0}
 	PriorityMedium   = Priority{name: "Medium", value: 100}
 	PriorityHigh     = Priority{name: "High", value: 1000}

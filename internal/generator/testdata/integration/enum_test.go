@@ -97,8 +97,8 @@ func TestGeneratedEnumWithSQL(t *testing.T) {
 	row = db.QueryRow("SELECT status, priority FROM records WHERE id = ?", 2)
 	err = row.Scan(&status, &priority)
 	require.NoError(t, err)
-	assert.Equal(t, StatusUnknown, status)  // zero value
-	assert.Equal(t, PriorityNone, priority) // zero value for priority (-1)
+	assert.Equal(t, StatusUnknown, status) // zero value
+	assert.Equal(t, PriorityLow, priority) // zero value for priority (0)
 }
 
 func TestGeneratedEnumWithYAML(t *testing.T) {

@@ -249,6 +249,18 @@ func (g *Generator) processExplicitValue(expr ast.Expr, state *constParseState) 
 			state.iotaOp = nil
 			return val
 		}
+	case *ast.UnaryExpr:
+		// handle negative numbers like -1
+		if e.Op == token.SUB {
+			if lit, ok := e.X.(*ast.BasicLit); ok {
+				if val, err := ConvertLiteralToInt(lit); err == nil {
+					state.lastExprType = exprTypePlain
+					state.lastValue = -val
+					state.iotaOp = nil
+					return -val
+				}
+			}
+		}
 	}
 	return 0
 }
