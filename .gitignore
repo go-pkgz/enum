@@ -5,3 +5,4 @@ coverage.html
 coverage_*.out
 coverage_*.html
 *.coverprofile
+enum
