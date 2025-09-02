@@ -57,7 +57,7 @@ func TestJobStatus(t *testing.T) {
 		// test Scan from nil - should get first value from StatusValues()
 		err = s2.Scan(nil)
 		require.NoError(t, err)
-		assert.Equal(t, JobStatusValues()[0], s2)
+		assert.Equal(t, JobStatusValues[0], s2)
 
 		// test invalid value
 		err = s2.Scan(123)
@@ -97,7 +97,7 @@ func TestJobStatus(t *testing.T) {
 		var s JobStatus
 		err = db.QueryRow(`SELECT status FROM test_status WHERE id = 4`).Scan(&s)
 		require.NoError(t, err)
-		assert.Equal(t, JobStatusValues()[0], s)
+		assert.Equal(t, JobStatusValues[0], s)
 	})
 
 	t.Run("invalid", func(t *testing.T) {
@@ -115,7 +115,7 @@ func TestJobStatus(t *testing.T) {
 			return true
 		})
 
-		assert.Equal(t, JobStatusValues(), collected)
+		assert.Equal(t, JobStatusValues, collected)
 
 		collected = nil
 		count := 0
@@ -125,7 +125,7 @@ func TestJobStatus(t *testing.T) {
 			return count < 2 // stop after collecting 2 items
 		})
 
-		assert.Equal(t, JobStatusValues()[:2], collected)
+		assert.Equal(t, JobStatusValues[:2], collected)
 	})
 }
 
@@ -156,5 +156,5 @@ func ExampleJobStatusIter() {
 	fmt.Println("first two job statuses:", firstTwo[0], firstTwo[1])
 	// output:
 	// all job statuses: 4
-	// first two job statuses: active blocked
+	// first two job statuses: unknown active
 }

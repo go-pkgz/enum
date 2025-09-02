@@ -55,10 +55,10 @@ func TestStatus(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, StatusBlocked, s2)
 
-		// test Scan from nil - should get first value from StatusValues()
+		// test Scan from nil - should get first value from StatusValues
 		err = s2.Scan(nil)
 		require.NoError(t, err)
-		assert.Equal(t, StatusValues()[0], s2)
+		assert.Equal(t, StatusValues[0], s2)
 
 		// test invalid value
 		err = s2.Scan(123)
@@ -98,7 +98,7 @@ func TestStatus(t *testing.T) {
 		var s Status
 		err = db.QueryRow(`SELECT status FROM test_status WHERE id = 4`).Scan(&s)
 		require.NoError(t, err)
-		assert.Equal(t, StatusValues()[0], s)
+		assert.Equal(t, StatusValues[0], s)
 	})
 
 	t.Run("iterator", func(t *testing.T) {
@@ -108,7 +108,7 @@ func TestStatus(t *testing.T) {
 			return true
 		})
 
-		assert.Equal(t, StatusValues(), collected)
+		assert.Equal(t, StatusValues, collected)
 
 		collected = nil
 		count := 0
@@ -118,7 +118,7 @@ func TestStatus(t *testing.T) {
 			return count < 2 // stop after collecting 2 items
 		})
 
-		assert.Equal(t, StatusValues()[:2], collected)
+		assert.Equal(t, StatusValues[:2], collected)
 	})
 
 	t.Run("invalid", func(t *testing.T) {
@@ -157,5 +157,5 @@ func ExampleStatusIter() {
 	fmt.Println("first two statuses:", firstTwo[0], firstTwo[1])
 	// output:
 	// all statuses: 4
-	// first two statuses: active blocked
+	// first two statuses: unknown active
 }

@@ -2,18 +2,20 @@
 package status
 
 import (
-	"fmt"
-
 	"database/sql/driver"
+	"fmt"
 )
 
 // Status is the exported type for the enum
 type Status struct {
 	name  string
-	value int
+	value uint8
 }
 
 func (e Status) String() string { return e.name }
+
+// Index returns the underlying integer value
+func (e Status) Index() uint8 { return e.value }
 
 // MarshalText implements encoding.TextMarshaler
 func (e Status) MarshalText() ([]byte, error) {
@@ -35,8 +37,15 @@ func (e Status) Value() (driver.Value, error) {
 // Scan implements the sql.Scanner interface
 func (e *Status) Scan(value interface{}) error {
 	if value == nil {
-		*e = StatusValues()[0]
-		return nil
+		// try to find zero value
+		for _, v := range StatusValues {
+			if v.Index() == 0 {
+				*e = v
+				return nil
+			}
+		}
+		// no zero value found, return error
+		return fmt.Errorf("cannot scan nil into Status: no zero value defined")
 	}
 
 	str, ok := value.(string)
@@ -57,19 +66,19 @@ func (e *Status) Scan(value interface{}) error {
 	return nil
 }
 
+// _statusParseMap is used for efficient string to enum conversion
+var _statusParseMap = map[string]Status{
+	"unknown":  StatusUnknown,
+	"active":   StatusActive,
+	"inactive": StatusInactive,
+	"blocked":  StatusBlocked,
+}
+
 // ParseStatus converts string to status enum value
 func ParseStatus(v string) (Status, error) {
 
-	switch v {
-	case "active":
-		return StatusActive, nil
-	case "blocked":
-		return StatusBlocked, nil
-	case "inactive":
-		return StatusInactive, nil
-	case "unknown":
-		return StatusUnknown, nil
-
+	if val, ok := _statusParseMap[v]; ok {
+		return val, nil
 	}
 
 	return Status{}, fmt.Errorf("invalid status: %s", v)
@@ -86,30 +95,26 @@ func MustStatus(v string) Status {
 
 // Public constants for status values
 var (
-	StatusActive   = Status{name: "active", value: 1}
-	StatusBlocked  = Status{name: "blocked", value: 3}
-	StatusInactive = Status{name: "inactive", value: 2}
 	StatusUnknown  = Status{name: "unknown", value: 0}
+	StatusActive   = Status{name: "active", value: 1}
+	StatusInactive = Status{name: "inactive", value: 2}
+	StatusBlocked  = Status{name: "blocked", value: 3}
 )
 
-// StatusValues returns all possible enum values
-func StatusValues() []Status {
-	return []Status{
-		StatusActive,
-		StatusBlocked,
-		StatusInactive,
-		StatusUnknown,
-	}
+// StatusValues contains all possible enum values
+var StatusValues = []Status{
+	StatusUnknown,
+	StatusActive,
+	StatusInactive,
+	StatusBlocked,
 }
 
-// StatusNames returns all possible enum names
-func StatusNames() []string {
-	return []string{
-		"active",
-		"blocked",
-		"inactive",
-		"unknown",
-	}
+// StatusNames contains all possible enum names
+var StatusNames = []string{
+	"unknown",
+	"active",
+	"inactive",
+	"blocked",
 }
 
 // StatusIter returns a function compatible with Go 1.23's range-over-func syntax.
@@ -120,7 +125,7 @@ func StatusNames() []string {
 //	}
 func StatusIter() func(yield func(Status) bool) {
 	return func(yield func(Status) bool) {
-		for _, v := range StatusValues() {
+		for _, v := range StatusValues {
 			if !yield(v) {
 				break
 			}
@@ -132,14 +137,14 @@ func StatusIter() func(yield func(Status) bool) {
 // for the original enum constants. They are intentionally placed in a var block
 // that is compiled away by the Go compiler.
 var _ = func() bool {
-	var _ status = 0
-	// This avoids "defined but not used" linter error for statusActive
-	var _ status = statusActive
-	// This avoids "defined but not used" linter error for statusBlocked
-	var _ status = statusBlocked
-	// This avoids "defined but not used" linter error for statusInactive
-	var _ status = statusInactive
+	var _ status = status(0)
 	// This avoids "defined but not used" linter error for statusUnknown
 	var _ status = statusUnknown
+	// This avoids "defined but not used" linter error for statusActive
+	var _ status = statusActive
+	// This avoids "defined but not used" linter error for statusInactive
+	var _ status = statusInactive
+	// This avoids "defined but not used" linter error for statusBlocked
+	var _ status = statusBlocked
 	return true
 }()

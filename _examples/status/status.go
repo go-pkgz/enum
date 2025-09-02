@@ -1,7 +1,7 @@
 package status
 
-//go:generate go run ../../main.go -type status -lower
-//go:generate go run ../../main.go -type jobStatus -lower -getter
+//go:generate go run ../../main.go -type status -lower -sql
+//go:generate go run ../../main.go -type jobStatus -lower -getter -sql
 
 type status uint8
 

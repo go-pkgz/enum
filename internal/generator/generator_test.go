@@ -40,6 +40,9 @@ func TestGenerator(t *testing.T) {
 		err = gen.Parse("testdata")
 		require.NoError(t, err)
 
+		// enable SQL to verify SQL-specific imports/methods when requested
+		gen.SetGenerateSQL(true)
+
 		err = gen.Generate()
 		require.NoError(t, err)
 
@@ -139,6 +142,7 @@ func TestGenerator(t *testing.T) {
 		err = gen.Parse("testdata")
 		require.NoError(t, err)
 
+		gen.SetGenerateSQL(true)
 		err = gen.Generate()
 		require.NoError(t, err)
 
@@ -160,6 +164,49 @@ func TestGenerator(t *testing.T) {
 		assert.Contains(t, string(content), "if b, ok := value.([]byte)")
 	})
 
+	t.Run("bson support", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		gen, err := New("status", tmpDir)
+		require.NoError(t, err)
+
+		err = gen.Parse("testdata")
+		require.NoError(t, err)
+
+		gen.SetGenerateBSON(true)
+		err = gen.Generate()
+		require.NoError(t, err)
+
+		content, err := os.ReadFile(filepath.Join(tmpDir, "status_enum.go"))
+		require.NoError(t, err)
+
+		// verify bson interfaces and imports
+		assert.Contains(t, string(content), `"go.mongodb.org/mongo-driver/bson"`)
+		assert.Contains(t, string(content), `"go.mongodb.org/mongo-driver/bson/bsontype"`)
+		assert.Contains(t, string(content), "func (e Status) MarshalBSONValue() (bsontype.Type, []byte, error)")
+		assert.Contains(t, string(content), "func (e *Status) UnmarshalBSONValue(t bsontype.Type, data []byte) error")
+	})
+
+	t.Run("yaml support", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		gen, err := New("status", tmpDir)
+		require.NoError(t, err)
+
+		err = gen.Parse("testdata")
+		require.NoError(t, err)
+
+		gen.SetGenerateYAML(true)
+		err = gen.Generate()
+		require.NoError(t, err)
+
+		content, err := os.ReadFile(filepath.Join(tmpDir, "status_enum.go"))
+		require.NoError(t, err)
+
+		// verify yaml interfaces and imports
+		assert.Contains(t, string(content), `"gopkg.in/yaml.v3"`)
+		assert.Contains(t, string(content), "func (e Status) MarshalYAML() (any, error)")
+		assert.Contains(t, string(content), "func (e *Status) UnmarshalYAML(value *yaml.Node) error")
+	})
+
 	t.Run("json support", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		gen, err := New("status", tmpDir)
@@ -178,8 +225,7 @@ func TestGenerator(t *testing.T) {
 		assert.Contains(t, string(content), "func (e Status) MarshalText() ([]byte, error)")
 		assert.Contains(t, string(content), "func (e *Status) UnmarshalText(text []byte) error")
 
-		// verify proper error handling in unmarshal
-		assert.Contains(t, string(content), "invalid status value: %v")
+		// verify UnmarshalText uses Parse
 		assert.Contains(t, string(content), "ParseStatus(string(text))")
 
 		// verify string conversion in marshal
@@ -365,6 +411,7 @@ func TestSQLNullHandling(t *testing.T) {
 		err = gen.Parse("testdata")
 		require.NoError(t, err)
 
+		gen.SetGenerateSQL(true)
 		err = gen.Generate()
 		require.NoError(t, err)
 
@@ -385,6 +432,7 @@ func TestSQLNullHandling(t *testing.T) {
 		err = gen.Parse("testdata")
 		require.NoError(t, err)
 
+		gen.SetGenerateSQL(true)
 		err = gen.Generate()
 		require.NoError(t, err)
 
@@ -779,6 +827,78 @@ func TestGetFileNameForType(t *testing.T) {
 			assert.Equal(t, test.expected, result)
 		})
 	}
+}
+
+func TestNegativeEnumValues(t *testing.T) {
+	t.Run("negative integers", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		// create enum with negative values
+		enumFile := filepath.Join(tmpDir, "test.go")
+		err := os.WriteFile(enumFile, []byte(`package test
+
+type errorCode int
+
+const (
+	errorCodeNone    errorCode = -1
+	errorCodeOK      errorCode = 0
+	errorCodeBadRequest errorCode = 400
+	errorCodeNotFound   errorCode = 404
+)`), 0o644)
+		require.NoError(t, err)
+
+		gen, err := New("errorCode", tmpDir)
+		require.NoError(t, err)
+
+		err = gen.Parse(tmpDir)
+		require.NoError(t, err)
+
+		// verify negative value was parsed correctly
+		assert.Equal(t, -1, gen.values["errorCodeNone"].value)
+		assert.Equal(t, 0, gen.values["errorCodeOK"].value)
+		assert.Equal(t, 400, gen.values["errorCodeBadRequest"].value)
+		assert.Equal(t, 404, gen.values["errorCodeNotFound"].value)
+
+		err = gen.Generate()
+		require.NoError(t, err)
+
+		// verify generated code has correct values
+		content, err := os.ReadFile(filepath.Join(tmpDir, "error_code_enum.go"))
+		require.NoError(t, err)
+
+		contentStr := string(content)
+		assert.Contains(t, contentStr, "ErrorCodeNone       = ErrorCode{name: \"None\", value: -1}")
+		assert.Contains(t, contentStr, "ErrorCodeOK         = ErrorCode{name: \"OK\", value: 0}")
+		assert.Contains(t, contentStr, "ErrorCodeBadRequest = ErrorCode{name: \"BadRequest\", value: 400}")
+		assert.Contains(t, contentStr, "ErrorCodeNotFound   = ErrorCode{name: \"NotFound\", value: 404}")
+	})
+
+	t.Run("invalid negative expression", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		// create enum with invalid negative expression (should default to 0)
+		enumFile := filepath.Join(tmpDir, "test.go")
+		err := os.WriteFile(enumFile, []byte(`package test
+
+type status int
+
+const (
+	statusInvalid status = -"not_a_number"
+	statusOK      status = 1
+)`), 0o644)
+		require.NoError(t, err)
+
+		gen, err := New("status", tmpDir)
+		require.NoError(t, err)
+
+		// this should parse but the invalid value should become 0
+		err = gen.Parse(tmpDir)
+		require.NoError(t, err)
+
+		// verify invalid negative expression defaulted to 0
+		assert.Equal(t, 0, gen.values["statusInvalid"].value)
+		assert.Equal(t, 1, gen.values["statusOK"].value)
+	})
 }
 
 func TestUnderlyingTypePreservation(t *testing.T) {

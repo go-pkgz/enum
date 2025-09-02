@@ -1,5 +1,5 @@
 // Package generator provides a code generator for enum types. It reads Go source files and extracts enum values
-// to generate a new type with json, bson and text marshaling support.
+// to generate a new type with text marshaling support by default. Optional flags add SQL, BSON (MongoDB), and YAML support.
 package generator
 
 import (
@@ -35,6 +35,9 @@ type Generator struct {
 	lowerCase      bool                   // use lower case for marshal/unmarshal
 	generateGetter bool                   // generate getter methods for enum values
 	underlyingType string                 // underlying type (e.g., "uint8", "int", etc.)
+	generateSQL    bool                   // generate SQL interfaces and imports
+	generateBSON   bool                   // generate BSON interfaces and imports
+	generateYAML   bool                   // generate YAML interfaces and imports
 }
 
 // constValue holds metadata about a const during parsing
@@ -101,6 +104,15 @@ func (g *Generator) SetLowerCase(lower bool) {
 func (g *Generator) SetGenerateGetter(generate bool) {
 	g.generateGetter = generate
 }
+
+// SetGenerateSQL enables or disables generation of SQL interfaces
+func (g *Generator) SetGenerateSQL(v bool) { g.generateSQL = v }
+
+// SetGenerateBSON enables or disables generation of BSON interfaces
+func (g *Generator) SetGenerateBSON(v bool) { g.generateBSON = v }
+
+// SetGenerateYAML enables or disables generation of YAML interfaces
+func (g *Generator) SetGenerateYAML(v bool) { g.generateYAML = v }
 
 // Parse reads the source directory and extracts enum information. it looks for const values
 // that start with the enum type name, for example if type is "status", it will find all const values
@@ -236,6 +248,19 @@ func (g *Generator) processExplicitValue(expr ast.Expr, state *constParseState) 
 			state.lastValue = val
 			state.iotaOp = nil
 			return val
+		}
+	case *ast.UnaryExpr:
+		// handle negative numbers like -1
+		if e.Op == token.SUB {
+			if lit, ok := e.X.(*ast.BasicLit); ok {
+				if val, err := ConvertLiteralToInt(lit); err == nil {
+					state.lastExprType = exprTypePlain
+					state.lastValue = -val
+					state.iotaOp = nil
+					return -val
+				}
+				// if conversion fails, fall through to return 0 (same as BasicLit case)
+			}
 		}
 	}
 	return 0
@@ -509,6 +534,9 @@ func (g *Generator) Generate() error {
 		LowerCase      bool
 		GenerateGetter bool
 		UnderlyingType string
+		GenerateSQL    bool
+		GenerateBSON   bool
+		GenerateYAML   bool
 	}{
 		Type:           g.Type,
 		Values:         values,
@@ -516,6 +544,9 @@ func (g *Generator) Generate() error {
 		LowerCase:      g.lowerCase,
 		GenerateGetter: g.generateGetter,
 		UnderlyingType: g.underlyingType,
+		GenerateSQL:    g.generateSQL,
+		GenerateBSON:   g.generateBSON,
+		GenerateYAML:   g.generateYAML,
 	}
 
 	// execute template
