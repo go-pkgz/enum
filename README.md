@@ -9,6 +9,7 @@
 - Text marshaling/unmarshaling (JSON works via TextMarshaler)
 - Optional SQL, BSON (MongoDB), and YAML support via flags
 - Case-sensitive or case-insensitive string representations
+- Alias support for parsing multiple string representations
 - Panic-free parsing with error handling
 - Must-style parsing variants for convenience
 - Declaration order preservation (enums maintain source code order, not alphabetical)
@@ -163,15 +164,56 @@ _ = coll.FindOne(ctx, bson.M{"status": "active"}).Decode(&out) // decodes via Un
 
 ### Case Sensitivity
 
-By default, the generator creates case-sensitive string representations. Use `-lower` flag for lowercase output:
+The `-lower` flag controls the output format of `String()` method:
 
 ```go
-// default (case-sensitive)
+// default (without -lower)
 StatusActive.String() // returns "Active"
 
 // with -lower flag
 StatusActive.String() // returns "active"
 ```
+
+**Parsing is always case-insensitive** regardless of the `-lower` flag:
+
+```go
+// all of these work, with or without -lower flag
+s1, _ := ParseStatus("active")   // works
+s2, _ := ParseStatus("Active")   // works
+s3, _ := ParseStatus("ACTIVE")   // works
+```
+
+### Parsing Aliases
+
+You can define alternative string representations for enum values using inline comments with the `enum:alias=` directive. This is useful when you need to accept multiple input formats for the same value:
+
+```go
+type permission int
+
+const (
+    permissionNone      permission = iota // enum:alias=n
+    permissionRead                        // enum:alias=r
+    permissionWrite                       // enum:alias=w
+    permissionReadWrite                   // enum:alias=rw,read-write
+)
+```
+
+With aliases defined, parsing accepts both canonical names and aliases:
+
+```go
+// all of these parse to PermissionReadWrite
+p1, _ := ParsePermission("ReadWrite")   // canonical name
+p2, _ := ParsePermission("rw")          // alias
+p3, _ := ParsePermission("RW")          // alias (case-insensitive)
+p4, _ := ParsePermission("read-write")  // alias
+```
+
+Alias rules:
+- Multiple aliases are separated by commas: `// enum:alias=rw,read-write`
+- Parsing is always case-insensitive
+- An alias cannot conflict with another constant's canonical name
+- Duplicate aliases across different constants cause generation to fail
+- The `String()` method always returns the canonical name, not aliases
 
 ### Getter Generation
 
