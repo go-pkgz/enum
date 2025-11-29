@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -411,7 +412,7 @@ func TestRuntimeIntegration(t *testing.T) {
 	// 2. Create a temp package for testing
 	pkgDir := t.TempDir()
 
-	// Copy enum definitions from testdata
+	// copy enum definitions from testdata
 	statusSrc, err := os.ReadFile("testdata/integration/status.go")
 	require.NoError(t, err)
 	err = os.WriteFile(filepath.Join(pkgDir, "status.go"), statusSrc, 0o644)
@@ -423,19 +424,19 @@ func TestRuntimeIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	// 3. Generate enums using the built binary
-	// Generate status enum
+	// generate status enum
 	cmd = exec.Command(binPath, "-type=status", "-lower", "-sql", "-bson", "-yaml")
 	cmd.Dir = pkgDir
 	output, err = cmd.CombinedOutput()
 	require.NoError(t, err, "failed to generate status enum: %s", output)
 
-	// Generate priority enum
+	// generate priority enum
 	cmd = exec.Command(binPath, "-type=priority", "-sql", "-bson", "-yaml")
 	cmd.Dir = pkgDir
 	output, err = cmd.CombinedOutput()
 	require.NoError(t, err, "failed to generate priority enum: %s", output)
 
-	// Verify generated files exist
+	// verify generated files exist
 	require.FileExists(t, filepath.Join(pkgDir, "status_enum.go"))
 	require.FileExists(t, filepath.Join(pkgDir, "priority_enum.go"))
 
@@ -548,6 +549,56 @@ type empty int
 		require.Error(t, invalidErr)
 		require.Contains(t, string(invalidOutput), "first letter must be lowercase")
 	})
+}
+
+// TestAliasIntegration tests that generated enums with aliases work correctly
+func TestAliasIntegration(t *testing.T) {
+	testDir := t.TempDir()
+	testFile := filepath.Join(testDir, "permission.go")
+	src := `package test
+type permission int
+const (
+	permissionNone      permission = iota // enum:alias=n
+	permissionRead                        // enum:alias=r
+	permissionWrite                       // enum:alias=w
+	permissionReadWrite                   // enum:alias=rw,read-write
+)
+`
+	err := os.WriteFile(testFile, []byte(src), 0o644)
+	require.NoError(t, err)
+
+	gen, err := New("permission", testDir)
+	require.NoError(t, err)
+	gen.SetLowerCase(true)
+
+	err = gen.Parse(testDir)
+	require.NoError(t, err)
+
+	err = gen.Generate()
+	require.NoError(t, err)
+
+	// verify generated file exists
+	content, err := os.ReadFile(filepath.Join(testDir, "permission_enum.go"))
+	require.NoError(t, err)
+	contentStr := string(content)
+
+	// verify parse map contains canonical names
+	assert.Contains(t, contentStr, `"none":`)
+	assert.Contains(t, contentStr, `"read":`)
+	assert.Contains(t, contentStr, `"write":`)
+	assert.Contains(t, contentStr, `"readwrite":`)
+
+	// verify parse map contains aliases
+	assert.Contains(t, contentStr, `"n":`)
+	assert.Contains(t, contentStr, `"r":`)
+	assert.Contains(t, contentStr, `"w":`)
+	assert.Contains(t, contentStr, `"rw":`)
+	assert.Contains(t, contentStr, `"read-write":`)
+
+	// verify generated code compiles (no duplicate map keys)
+	// the generated map should have unique entries for each key
+	assert.Equal(t, 1, strings.Count(contentStr, `"none":`), "canonical name 'none' should appear exactly once")
+	assert.Equal(t, 1, strings.Count(contentStr, `"n":`), "alias 'n' should appear exactly once")
 }
 
 // TestErrorHandling tests various error conditions

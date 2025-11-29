@@ -583,11 +583,11 @@ func TestGeneratorLowerCase(t *testing.T) {
 
 		// check parse map has lowercase keys
 		assert.Contains(t, string(content), `"active":   StatusActive`)
-		// for lowercase mode, we don't use strings.ToLower in Parse function
+		// parsing is always case-insensitive, so strings.ToLower is always used
 		parseIdx := bytes.Index(content, []byte("func ParseStatus"))
 		parseEnd := bytes.Index(content[parseIdx:], []byte("}"))
 		parseFunc := string(content[parseIdx : parseIdx+parseEnd])
-		assert.NotContains(t, parseFunc, "strings.ToLower")
+		assert.Contains(t, parseFunc, "strings.ToLower")
 	})
 
 	t.Run("regular case values", func(t *testing.T) {
@@ -1775,6 +1775,203 @@ func TestParseConstBlockWithImportSpec(t *testing.T) {
 
 	// no values should be added
 	assert.Empty(t, gen.values)
+}
+
+func TestParseAliasComment(t *testing.T) {
+	tests := []struct {
+		name     string
+		comment  string
+		expected []string
+	}{
+		{"basic alias", "// enum:alias=rw", []string{"rw"}},
+		{"multiple aliases", "// enum:alias=rw,read-write", []string{"rw", "read-write"}},
+		{"with whitespace", "// enum:alias= rw , read-write ", []string{"rw", "read-write"}},
+		{"empty value", "// enum:alias=", nil},
+		{"empty between commas", "// enum:alias=a,,b", []string{"a", "b"}},
+		{"no alias directive", "// some comment", nil},
+		{"nil comment", "", nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var comment *ast.CommentGroup
+			if tt.comment != "" {
+				comment = &ast.CommentGroup{
+					List: []*ast.Comment{{Text: tt.comment}},
+				}
+			}
+			result := parseAliasComment(comment)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestParseWithAliases(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.go")
+	src := `package test
+type status int
+const (
+	statusActive status = iota // enum:alias=a,on
+	statusInactive             // enum:alias=i,off
+)
+`
+	require.NoError(t, os.WriteFile(testFile, []byte(src), 0o644))
+
+	gen, err := New("status", "")
+	require.NoError(t, err)
+	err = gen.Parse(tmpDir)
+	require.NoError(t, err)
+
+	// verify aliases are extracted
+	assert.Equal(t, []string{"a", "on"}, gen.values["statusActive"].aliases)
+	assert.Equal(t, []string{"i", "off"}, gen.values["statusInactive"].aliases)
+}
+
+func TestParseWithoutAliases(t *testing.T) {
+	// ensure backward compatibility - constants without aliases should have nil aliases
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.go")
+	src := `package test
+type status int
+const (
+	statusActive status = iota
+	statusInactive
+)
+`
+	require.NoError(t, os.WriteFile(testFile, []byte(src), 0o644))
+
+	gen, err := New("status", "")
+	require.NoError(t, err)
+	err = gen.Parse(tmpDir)
+	require.NoError(t, err)
+
+	// verify no aliases
+	assert.Nil(t, gen.values["statusActive"].aliases)
+	assert.Nil(t, gen.values["statusInactive"].aliases)
+}
+
+func TestGenerateWithDuplicateAliases(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.go")
+	src := `package test
+type status int
+const (
+	statusA status = iota // enum:alias=x
+	statusB               // enum:alias=x
+)
+`
+	require.NoError(t, os.WriteFile(testFile, []byte(src), 0o644))
+
+	gen, err := New("status", tmpDir)
+	require.NoError(t, err)
+	err = gen.Parse(tmpDir)
+	require.NoError(t, err)
+
+	err = gen.Generate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate alias")
+	assert.Contains(t, err.Error(), "x")
+}
+
+func TestGenerateWithCanonicalConflict(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.go")
+	src := `package test
+type status int
+const (
+	statusActive status = iota // enum:alias=inactive
+	statusInactive
+)
+`
+	require.NoError(t, os.WriteFile(testFile, []byte(src), 0o644))
+
+	gen, err := New("status", tmpDir)
+	require.NoError(t, err)
+	err = gen.Parse(tmpDir)
+	require.NoError(t, err)
+
+	err = gen.Generate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "conflicts with canonical")
+}
+
+func TestGenerateAliasesInParseMap(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.go")
+	src := `package test
+type status int
+const (
+	statusActive status = iota // enum:alias=a,on
+	statusInactive             // enum:alias=i,off
+)
+`
+	require.NoError(t, os.WriteFile(testFile, []byte(src), 0o644))
+
+	gen, err := New("status", tmpDir)
+	require.NoError(t, err)
+	err = gen.Parse(tmpDir)
+	require.NoError(t, err)
+
+	err = gen.Generate()
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(filepath.Join(tmpDir, "status_enum.go"))
+	require.NoError(t, err)
+
+	// verify parse map contains canonical names
+	assert.Contains(t, string(content), `"active":`)
+	assert.Contains(t, string(content), `"inactive":`)
+
+	// verify parse map contains aliases
+	assert.Contains(t, string(content), `"a":`)
+	assert.Contains(t, string(content), `"on":`)
+	assert.Contains(t, string(content), `"i":`)
+	assert.Contains(t, string(content), `"off":`)
+
+	// verify aliases point to correct enum values
+	assert.Contains(t, string(content), `"a":        StatusActive`)
+	assert.Contains(t, string(content), `"on":       StatusActive`)
+	assert.Contains(t, string(content), `"i":        StatusInactive`)
+	assert.Contains(t, string(content), `"off":      StatusInactive`)
+}
+
+func TestGenerateLowerCaseWithMixedCaseAlias(t *testing.T) {
+	// test that mixed-case aliases work with -lower flag
+	// this was a bug: parse map keys are always lowercase but Parse() didn't normalize input
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.go")
+	src := `package test
+type permission int
+const (
+	permissionNone      permission = iota // enum:alias=n
+	permissionReadWrite                   // enum:alias=RW,read-write
+)
+`
+	require.NoError(t, os.WriteFile(testFile, []byte(src), 0o644))
+
+	gen, err := New("permission", tmpDir)
+	require.NoError(t, err)
+	gen.SetLowerCase(true) // enable -lower flag
+	err = gen.Parse(tmpDir)
+	require.NoError(t, err)
+
+	err = gen.Generate()
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(filepath.Join(tmpDir, "permission_enum.go"))
+	require.NoError(t, err)
+
+	// verify generated parse function uses strings.ToLower
+	assert.Contains(t, string(content), "strings.ToLower(v)")
+
+	// verify aliases are stored lowercase in map
+	assert.Contains(t, string(content), `"rw":`)
+	assert.Contains(t, string(content), `"read-write":`)
+
+	// verify parse function will handle mixed case input correctly by checking the template output
+	// the parse function should always use strings.ToLower(v) for lookup
+	assert.Contains(t, string(content), `_permissionParseMap[strings.ToLower(v)]`)
 }
 
 func TestApplyIotaOperationDivisionByZeroRightSide(t *testing.T) {

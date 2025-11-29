@@ -14,9 +14,7 @@ import (
 	{{- if .GenerateYAML }}
 	"gopkg.in/yaml.v3"
 	{{- end}}
-	{{- if .LowerCase | not }}
 	"strings"
-	{{- end}}
 )
 
 // {{.Type | title}} is the exported type for the enum
@@ -124,22 +122,22 @@ func (e *{{.Type | title}}) UnmarshalYAML(value *yaml.Node) error {
 
 // _{{.Type}}ParseMap is used for efficient string to enum conversion
 var _{{.Type}}ParseMap = map[string]{{.Type | title}}{
-{{range .Values -}}
-	"{{.Name | ToLower}}": {{.PublicName}},
+{{range $v := .Values -}}
+	"{{$v.Name | ToLower}}": {{$v.PublicName}},
+{{- range $alias := $v.Aliases}}
+{{- if ne ($alias | ToLower) ($v.Name | ToLower)}}
+	"{{$alias | ToLower}}": {{$v.PublicName}},
+{{- end}}
+{{- end}}
 {{end}}
 }
 
-// Parse{{.Type | title}} converts string to {{.Type}} enum value
+// Parse{{.Type | title}} converts string to {{.Type}} enum value.
+// Parsing is always case-insensitive.
 func Parse{{.Type | title}}(v string) ({{.Type | title}}, error) {
-{{if .LowerCase}}
-	if val, ok := _{{.Type}}ParseMap[v]; ok {
-		return val, nil
-	}
-{{else}}
 	if val, ok := _{{.Type}}ParseMap[strings.ToLower(v)]; ok {
 		return val, nil
 	}
-{{end}}
 	return {{.Type | title}}{}, fmt.Errorf("invalid {{.Type}}: %s", v)
 }
 

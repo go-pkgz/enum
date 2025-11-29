@@ -42,8 +42,9 @@ type Generator struct {
 
 // constValue holds metadata about a const during parsing
 type constValue struct {
-	value int       // the numeric value
-	pos   token.Pos // source position for ordering
+	value   int       // the numeric value
+	pos     token.Pos // source position for ordering
+	aliases []string  // aliases from comment annotation
 }
 
 // constExprType represents the type of constant expression
@@ -73,10 +74,11 @@ type constParseState struct {
 
 // Value represents a single enum value
 type Value struct {
-	PrivateName string // e.g., "statusActive"
-	PublicName  string // e.g., "StatusActive"
-	Name        string // e.g., "Active"
-	Index       int    // enum index value
+	PrivateName string   // e.g., "statusActive"
+	PublicName  string   // e.g., "StatusActive"
+	Name        string   // e.g., "Active"
+	Index       int      // enum index value
+	Aliases     []string // e.g., ["rw", "read-write"] from // enum:alias=rw,read-write
 }
 
 // New creates a new Generator instance
@@ -120,7 +122,7 @@ func (g *Generator) SetGenerateYAML(v bool) { g.generateYAML = v }
 // the const name and its iota value, for example: {"statusActive": 1, "statusInactive": 2}
 func (g *Generator) Parse(dir string) error {
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, dir, nil, 0)
+	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)
 	if err != nil {
 		return fmt.Errorf("failed to parse directory: %w", err)
 	}
@@ -181,6 +183,9 @@ func (g *Generator) parseConstBlock(decl *ast.GenDecl) {
 			continue
 		}
 
+		// parse aliases from inline comment (vspec.Comment is the inline comment)
+		aliases := parseAliasComment(vspec.Comment)
+
 		// process all names in this spec
 		for i, name := range vspec.Names {
 			// skip underscore placeholders
@@ -196,10 +201,11 @@ func (g *Generator) parseConstBlock(decl *ast.GenDecl) {
 			// process value based on expression
 			enumValue := g.processConstValue(vspec, i, state)
 
-			// store the value with its position
+			// store the value with its position and aliases
 			g.values[name.Name] = &constValue{
-				value: enumValue,
-				pos:   name.Pos(),
+				value:   enumValue,
+				pos:     name.Pos(),
+				aliases: aliases,
 			}
 		}
 
@@ -460,6 +466,11 @@ func EvaluateBinaryExpr(expr *ast.BinaryExpr, iotaVal int) (value int, usesIota 
 //   - exported const values (e.g., StatusActive)
 //   - helper functions to get all values and names
 func (g *Generator) Generate() error {
+	// validate aliases: no duplicates and no conflicts with canonical names
+	if err := g.validateAliases(); err != nil {
+		return err
+	}
+
 	// to avoid an undefined behavior for a Getter, we need to check if the values are unique
 	if g.generateGetter {
 		valuesCounter := make(map[int][]string)
@@ -511,6 +522,7 @@ func (g *Generator) Generate() error {
 			PublicName:  publicName,
 			Name:        titleCaser.String(nameWithoutPrefix),
 			Index:       e.cv.value,
+			Aliases:     e.cv.aliases,
 		})
 	}
 
@@ -631,6 +643,73 @@ func getFileNameForType(typeName string) string {
 	}
 
 	return strings.Join(words, "_") + "_enum.go"
+}
+
+// validateAliases checks for duplicate aliases and conflicts with canonical names
+func (g *Generator) validateAliases() error {
+	// collect all canonical names first (case-insensitive)
+	canonicalNames := make(map[string]string) // lowercase -> constant name
+	for name := range g.values {
+		nameWithoutPrefix := strings.TrimPrefix(name, g.Type)
+		canonicalNames[strings.ToLower(nameWithoutPrefix)] = name
+	}
+
+	// validate aliases
+	aliasToConst := make(map[string]string) // lowercase alias -> constant name
+	var errs []error
+
+	for name, cv := range g.values {
+		for _, alias := range cv.aliases {
+			lowerAlias := strings.ToLower(alias)
+
+			// check if alias conflicts with a DIFFERENT constant's canonical name
+			if existingName, ok := canonicalNames[lowerAlias]; ok && existingName != name {
+				errs = append(errs, fmt.Errorf("alias %q for %s conflicts with canonical name of %s", alias, name, existingName))
+				continue
+			}
+
+			// check for duplicate aliases
+			if existingName, ok := aliasToConst[lowerAlias]; ok {
+				errs = append(errs, fmt.Errorf("duplicate alias %q: used by both %s and %s", alias, existingName, name))
+				continue
+			}
+
+			aliasToConst[lowerAlias] = name
+		}
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	return nil
+}
+
+// parseAliasComment extracts aliases from an inline comment like "// enum:alias=rw,read-write"
+func parseAliasComment(comment *ast.CommentGroup) []string {
+	if comment == nil {
+		return nil
+	}
+	for _, c := range comment.List {
+		text := strings.TrimSpace(strings.TrimPrefix(c.Text, "//"))
+		if strings.HasPrefix(text, "enum:alias=") {
+			aliasStr := strings.TrimPrefix(text, "enum:alias=")
+			if aliasStr == "" {
+				return nil
+			}
+			aliases := strings.Split(aliasStr, ",")
+			result := make([]string, 0, len(aliases))
+			for _, a := range aliases {
+				if trimmed := strings.TrimSpace(a); trimmed != "" {
+					result = append(result, trimmed)
+				}
+			}
+			if len(result) == 0 {
+				return nil
+			}
+			return result
+		}
+	}
+	return nil
 }
 
 // isValidGoIdentifier checks if a string is a valid Go identifier:

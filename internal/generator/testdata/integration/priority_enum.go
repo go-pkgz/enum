@@ -4,10 +4,11 @@ package integration
 import (
 	"database/sql/driver"
 	"fmt"
+	"strings"
+
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/bsontype"
 	"gopkg.in/yaml.v3"
-	"strings"
 )
 
 // Priority is the exported type for the enum

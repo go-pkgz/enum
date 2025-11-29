@@ -7,6 +7,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/bsontype"
 	"gopkg.in/yaml.v3"
+	"strings"
 )
 
 // Status is the exported type for the enum
@@ -117,13 +118,12 @@ var _statusParseMap = map[string]Status{
 	"archived": StatusArchived,
 }
 
-// ParseStatus converts string to status enum value
+// ParseStatus converts string to status enum value.
+// Parsing is always case-insensitive.
 func ParseStatus(v string) (Status, error) {
-
-	if val, ok := _statusParseMap[v]; ok {
+	if val, ok := _statusParseMap[strings.ToLower(v)]; ok {
 		return val, nil
 	}
-
 	return Status{}, fmt.Errorf("invalid status: %s", v)
 }
 
