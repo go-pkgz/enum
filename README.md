@@ -257,6 +257,8 @@ _, err = db.Exec("UPDATE users SET status = ? WHERE id = ?", StatusActive, userI
 
 - **Parsing**: O(1) constant time using map lookup (previously O(n) with switch statement)
 - **Values/Names access**: Zero allocation - returns pre-computed package variables
+
+> **Note**: `StatusValues` and `StatusNames` are exported slices. Do not modify them as this would affect all code using the enum.
 - **Memory efficient**: Single shared instance for each enum value
 - **Declaration order**: Preserved from source code, not alphabetically sorted
 
