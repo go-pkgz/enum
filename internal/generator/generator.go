@@ -45,6 +45,7 @@ type constValue struct {
 	value   int       // the numeric value
 	pos     token.Pos // source position for ordering
 	aliases []string  // aliases from comment annotation
+	comment string    // free-text doc comment (enum: directives excluded)
 }
 
 // constExprType represents the type of constant expression
@@ -79,6 +80,7 @@ type Value struct {
 	Name        string   // e.g., "Active"
 	Index       int      // enum index value
 	Aliases     []string // e.g., ["rw", "read-write"] from // enum:alias=rw,read-write
+	Comment     string   // doc comment for the generated public constant
 }
 
 // New creates a new Generator instance
@@ -186,6 +188,12 @@ func (g *Generator) parseConstBlock(decl *ast.GenDecl) {
 		// parse aliases from inline comment (vspec.Comment is the inline comment)
 		aliases := parseAliasComment(vspec.Comment)
 
+		// extract free-text comment: inline takes priority, doc comment is fallback
+		comment := parseDocComment(vspec.Comment)
+		if comment == "" {
+			comment = parseDocComment(vspec.Doc)
+		}
+
 		// process all names in this spec
 		for i, name := range vspec.Names {
 			// skip underscore placeholders
@@ -201,11 +209,12 @@ func (g *Generator) parseConstBlock(decl *ast.GenDecl) {
 			// process value based on expression
 			enumValue := g.processConstValue(vspec, i, state)
 
-			// store the value with its position and aliases
+			// store the value with its position, aliases, and comment
 			g.values[name.Name] = &constValue{
 				value:   enumValue,
 				pos:     name.Pos(),
 				aliases: aliases,
+				comment: comment,
 			}
 		}
 
@@ -523,6 +532,7 @@ func (g *Generator) Generate() error {
 			Name:        titleCaser.String(nameWithoutPrefix),
 			Index:       e.cv.value,
 			Aliases:     e.cv.aliases,
+			Comment:     e.cv.comment,
 		})
 	}
 
@@ -710,6 +720,24 @@ func parseAliasComment(comment *ast.CommentGroup) []string {
 		}
 	}
 	return nil
+}
+
+// parseDocComment extracts free-text documentation from a comment group,
+// skipping any lines that are enum: directives (e.g., enum:alias=...).
+// Multiple non-directive lines are joined with a single space.
+func parseDocComment(comment *ast.CommentGroup) string {
+	if comment == nil {
+		return ""
+	}
+	var parts []string
+	for _, c := range comment.List {
+		text := strings.TrimSpace(strings.TrimPrefix(c.Text, "//"))
+		if text == "" || strings.HasPrefix(text, "enum:") {
+			continue
+		}
+		parts = append(parts, text)
+	}
+	return strings.Join(parts, " ")
 }
 
 // isValidGoIdentifier checks if a string is a valid Go identifier:

@@ -166,7 +166,8 @@ func Get{{.Type | title}}ByID(v {{if .UnderlyingType}}{{.UnderlyingType}}{{else}
 // Public constants for {{.Type}} values
 var (
 {{range .Values -}}
-	{{.PublicName}} = {{$.Type | title}}{name: "{{if $.LowerCase}}{{.Name | ToLower}}{{else}}{{.Name}}{{end}}", value: {{.Index}}}
+{{- if .Comment}}	// {{.Comment}}
+{{end -}}	{{.PublicName}} = {{$.Type | title}}{name: "{{if $.LowerCase}}{{.Name | ToLower}}{{else}}{{.Name}}{{end}}", value: {{.Index}}}
 {{end -}}
 )
 

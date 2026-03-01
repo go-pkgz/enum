@@ -1806,6 +1806,75 @@ func TestParseAliasComment(t *testing.T) {
 	}
 }
 
+func TestParseDocComment(t *testing.T) {
+	tests := []struct {
+		name     string
+		comments []string // each string is one // comment line
+		expected string
+	}{
+		{
+			name:     "nil comment group",
+			comments: nil,
+			expected: "",
+		},
+		{
+			name:     "basic inline description",
+			comments: []string{"// Should be first"},
+			expected: "Should be first",
+		},
+		{
+			name:     "strips leading space after //",
+			comments: []string{"//  Should be first"},
+			expected: "Should be first",
+		},
+		{
+			name:     "description with parentheses",
+			comments: []string{"// Should be first (alphabetically would be fourth)"},
+			expected: "Should be first (alphabetically would be fourth)",
+		},
+		{
+			name:     "enum directive only — returns empty",
+			comments: []string{"// enum:alias=rw"},
+			expected: "",
+		},
+		{
+			name:     "empty comment text — returns empty",
+			comments: []string{"//"},
+			expected: "",
+		},
+		{
+			name:     "multi-line description joined with space",
+			comments: []string{"// First line", "// second line"},
+			expected: "First line second line",
+		},
+		{
+			name:     "directive line filtered, text line kept",
+			comments: []string{"// My description", "// enum:alias=a,b"},
+			expected: "My description",
+		},
+		{
+			name:     "directive line first, text line kept",
+			comments: []string{"// enum:alias=rw", "// Read-Write access level"},
+			expected: "Read-Write access level",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var comment *ast.CommentGroup
+			if tt.comments != nil {
+				list := make([]*ast.Comment, len(tt.comments))
+				for i, c := range tt.comments {
+					list[i] = &ast.Comment{Text: c}
+				}
+				comment = &ast.CommentGroup{List: list}
+			}
+			result := parseDocComment(comment)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 func TestParseWithAliases(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.go")
@@ -1934,6 +2003,180 @@ const (
 	assert.Contains(t, string(content), `"on":       StatusActive`)
 	assert.Contains(t, string(content), `"i":        StatusInactive`)
 	assert.Contains(t, string(content), `"off":      StatusInactive`)
+}
+
+func TestGenerateConstComments(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	src := `package testpkg
+
+type orderTest uint8
+
+const (
+	orderTestZero    orderTest = iota // Should be first (alphabetically would be fourth)
+	orderTestAlpha                    // Should be second (alphabetically would be first)
+	orderTestCharlie                  // Should be third (alphabetically would be third)
+	orderTestBravo                    // Should be fourth (alphabetically would be second)
+)
+`
+	err := os.WriteFile(filepath.Join(tmpDir, "order.go"), []byte(src), 0o600)
+	require.NoError(t, err)
+
+	gen, err := New("orderTest", tmpDir)
+	require.NoError(t, err)
+	require.NoError(t, gen.Parse(tmpDir))
+	require.NoError(t, gen.Generate())
+
+	content, err := os.ReadFile(filepath.Join(tmpDir, "order_test_enum.go"))
+	require.NoError(t, err)
+	out := string(content)
+
+	// block comment still present
+	assert.Contains(t, out, "// Public constants for orderTest values")
+
+	// individual comments present
+	assert.Contains(t, out, "// Should be first (alphabetically would be fourth)")
+	assert.Contains(t, out, "// Should be second (alphabetically would be first)")
+	assert.Contains(t, out, "// Should be third (alphabetically would be third)")
+	assert.Contains(t, out, "// Should be fourth (alphabetically would be second)")
+
+	// each comment appears before its constant (check relative positions)
+	zeroCommentPos := strings.Index(out, "// Should be first (alphabetically would be fourth)")
+	zeroConstPos := strings.Index(out, "OrderTestZero =")
+	assert.Less(t, zeroCommentPos, zeroConstPos, "comment should appear before constant")
+
+	alphaCommentPos := strings.Index(out, "// Should be second (alphabetically would be first)")
+	alphaConstPos := strings.Index(out, "OrderTestAlpha =")
+	assert.Less(t, alphaCommentPos, alphaConstPos, "comment should appear before constant")
+}
+
+func TestGenerateConstCommentsDocAboveFallback(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	src := `package testpkg
+
+type orderTest uint8
+
+const (
+	// The zero value — default when unset
+	orderTestZero orderTest = iota
+	// Alphabetically first but declared second
+	orderTestAlpha
+)
+`
+	err := os.WriteFile(filepath.Join(tmpDir, "order.go"), []byte(src), 0o600)
+	require.NoError(t, err)
+
+	gen, err := New("orderTest", tmpDir)
+	require.NoError(t, err)
+	require.NoError(t, gen.Parse(tmpDir))
+	require.NoError(t, gen.Generate())
+
+	content, err := os.ReadFile(filepath.Join(tmpDir, "order_test_enum.go"))
+	require.NoError(t, err)
+	out := string(content)
+
+	assert.Contains(t, out, "// The zero value — default when unset")
+	assert.Contains(t, out, "// Alphabetically first but declared second")
+}
+
+func TestGenerateConstCommentsInlineOverridesDoc(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	src := `package testpkg
+
+type orderTest uint8
+
+const (
+	// doc comment — should NOT appear
+	orderTestZero orderTest = iota // inline comment wins
+)
+`
+	err := os.WriteFile(filepath.Join(tmpDir, "order.go"), []byte(src), 0o600)
+	require.NoError(t, err)
+
+	gen, err := New("orderTest", tmpDir)
+	require.NoError(t, err)
+	require.NoError(t, gen.Parse(tmpDir))
+	require.NoError(t, gen.Generate())
+
+	content, err := os.ReadFile(filepath.Join(tmpDir, "order_test_enum.go"))
+	require.NoError(t, err)
+	out := string(content)
+
+	assert.Contains(t, out, "// inline comment wins")
+	assert.NotContains(t, out, "// doc comment")
+}
+
+func TestGenerateNoCommentNoDiff(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	src := `package testpkg
+
+type status uint8
+
+const (
+	statusActive   status = iota
+	statusInactive
+)
+`
+	err := os.WriteFile(filepath.Join(tmpDir, "status.go"), []byte(src), 0o600)
+	require.NoError(t, err)
+
+	gen, err := New("status", tmpDir)
+	require.NoError(t, err)
+	require.NoError(t, gen.Parse(tmpDir))
+	require.NoError(t, gen.Generate())
+
+	content, err := os.ReadFile(filepath.Join(tmpDir, "status_enum.go"))
+	require.NoError(t, err)
+	out := string(content)
+
+	// no individual doc comment lines in the var block
+	varBlockStart := strings.Index(out, "// Public constants for status values")
+	varBlockEnd := strings.Index(out, "// StatusValues contains")
+	varBlock := out[varBlockStart:varBlockEnd]
+	assert.NotContains(t, varBlock, "//\n", "var block should have no stray empty comment lines")
+	assert.NotContains(t, varBlock, "\t//\n", "var block should have no stray empty comment lines")
+	assert.Contains(t, out, "StatusActive")
+	assert.Contains(t, out, "StatusInactive")
+}
+
+func TestGenerateAliasAndCommentCoexist(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	src := `package testpkg
+
+type status uint8
+
+const (
+	statusReadWrite status = iota // enum:alias=rw,read-write
+	// Administrator access
+	statusAdmin // enum:alias=adm
+)
+`
+	err := os.WriteFile(filepath.Join(tmpDir, "status.go"), []byte(src), 0o600)
+	require.NoError(t, err)
+
+	gen, err := New("status", tmpDir)
+	require.NoError(t, err)
+	require.NoError(t, gen.Parse(tmpDir))
+	require.NoError(t, gen.Generate())
+
+	content, err := os.ReadFile(filepath.Join(tmpDir, "status_enum.go"))
+	require.NoError(t, err)
+	out := string(content)
+
+	// aliases still work
+	assert.Contains(t, out, `"rw":`)
+	assert.Contains(t, out, `"read-write":`)
+	assert.Contains(t, out, `"adm":`)
+
+	// statusAdmin has doc comment
+	assert.Contains(t, out, "// Administrator access")
+
+	// no doc comment line before StatusReadWrite (directive-only inline → no comment emitted)
+	assert.NotContains(t, out, "//\n\tStatusReadWrite =")
 }
 
 func TestGenerateLowerCaseWithMixedCaseAlias(t *testing.T) {
