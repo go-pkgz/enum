@@ -729,7 +729,7 @@ func parseDocComment(comment *ast.CommentGroup) string {
 	if comment == nil {
 		return ""
 	}
-	var parts []string
+	parts := make([]string, 0, len(comment.List))
 	for _, c := range comment.List {
 		text := strings.TrimSpace(strings.TrimPrefix(c.Text, "//"))
 		if text == "" || strings.HasPrefix(text, "enum:") {
