@@ -188,6 +188,12 @@ func (g *Generator) parseConstBlock(decl *ast.GenDecl) {
 		// parse aliases from inline comment (vspec.Comment is the inline comment)
 		aliases := parseAliasComment(vspec.Comment)
 
+		// extract free-text comment: inline takes priority, doc comment is fallback
+		comment := parseDocComment(vspec.Comment)
+		if comment == "" {
+			comment = parseDocComment(vspec.Doc)
+		}
+
 		// process all names in this spec
 		for i, name := range vspec.Names {
 			// skip underscore placeholders
@@ -203,11 +209,12 @@ func (g *Generator) parseConstBlock(decl *ast.GenDecl) {
 			// process value based on expression
 			enumValue := g.processConstValue(vspec, i, state)
 
-			// store the value with its position and aliases
+			// store the value with its position, aliases, and comment
 			g.values[name.Name] = &constValue{
 				value:   enumValue,
 				pos:     name.Pos(),
 				aliases: aliases,
+				comment: comment,
 			}
 		}
 
@@ -525,6 +532,7 @@ func (g *Generator) Generate() error {
 			Name:        titleCaser.String(nameWithoutPrefix),
 			Index:       e.cv.value,
 			Aliases:     e.cv.aliases,
+			Comment:     e.cv.comment,
 		})
 	}
 
