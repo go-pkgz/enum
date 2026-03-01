@@ -1806,6 +1806,75 @@ func TestParseAliasComment(t *testing.T) {
 	}
 }
 
+func TestParseDocComment(t *testing.T) {
+	tests := []struct {
+		name     string
+		comments []string // each string is one // comment line
+		expected string
+	}{
+		{
+			name:     "nil comment group",
+			comments: nil,
+			expected: "",
+		},
+		{
+			name:     "basic inline description",
+			comments: []string{"// Should be first"},
+			expected: "Should be first",
+		},
+		{
+			name:     "strips leading space after //",
+			comments: []string{"//  Should be first"},
+			expected: "Should be first",
+		},
+		{
+			name:     "description with parentheses",
+			comments: []string{"// Should be first (alphabetically would be fourth)"},
+			expected: "Should be first (alphabetically would be fourth)",
+		},
+		{
+			name:     "enum directive only — returns empty",
+			comments: []string{"// enum:alias=rw"},
+			expected: "",
+		},
+		{
+			name:     "empty comment text — returns empty",
+			comments: []string{"//"},
+			expected: "",
+		},
+		{
+			name:     "multi-line description joined with space",
+			comments: []string{"// First line", "// second line"},
+			expected: "First line second line",
+		},
+		{
+			name:     "directive line filtered, text line kept",
+			comments: []string{"// My description", "// enum:alias=a,b"},
+			expected: "My description",
+		},
+		{
+			name:     "directive line first, text line kept",
+			comments: []string{"// enum:alias=rw", "// Read-Write access level"},
+			expected: "Read-Write access level",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var comment *ast.CommentGroup
+			if tt.comments != nil {
+				list := make([]*ast.Comment, len(tt.comments))
+				for i, c := range tt.comments {
+					list[i] = &ast.Comment{Text: c}
+				}
+				comment = &ast.CommentGroup{List: list}
+			}
+			result := parseDocComment(comment)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 func TestParseWithAliases(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.go")

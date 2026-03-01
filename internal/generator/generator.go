@@ -714,6 +714,24 @@ func parseAliasComment(comment *ast.CommentGroup) []string {
 	return nil
 }
 
+// parseDocComment extracts free-text documentation from a comment group,
+// skipping any lines that are enum: directives (e.g., enum:alias=...).
+// Multiple non-directive lines are joined with a single space.
+func parseDocComment(comment *ast.CommentGroup) string {
+	if comment == nil {
+		return ""
+	}
+	var parts []string
+	for _, c := range comment.List {
+		text := strings.TrimSpace(strings.TrimPrefix(c.Text, "//"))
+		if text == "" || strings.HasPrefix(text, "enum:") {
+			continue
+		}
+		parts = append(parts, text)
+	}
+	return strings.Join(parts, " ")
+}
+
 // isValidGoIdentifier checks if a string is a valid Go identifier:
 // - must start with a letter or underscore
 // - can contain letters, digits, and underscores
