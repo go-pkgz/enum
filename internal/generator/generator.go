@@ -45,6 +45,7 @@ type constValue struct {
 	value   int       // the numeric value
 	pos     token.Pos // source position for ordering
 	aliases []string  // aliases from comment annotation
+	comment string    // free-text doc comment (enum: directives excluded)
 }
 
 // constExprType represents the type of constant expression
@@ -79,6 +80,7 @@ type Value struct {
 	Name        string   // e.g., "Active"
 	Index       int      // enum index value
 	Aliases     []string // e.g., ["rw", "read-write"] from // enum:alias=rw,read-write
+	Comment     string   // doc comment for the generated public constant
 }
 
 // New creates a new Generator instance
