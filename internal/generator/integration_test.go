@@ -443,14 +443,14 @@ func TestRuntimeIntegration(t *testing.T) {
 	// 4. Create go.mod for the test package
 	goModContent := []byte(`module testpkg
 
-go 1.24
+go 1.25
 
 require (
-	github.com/stretchr/testify v1.10.0
-	go.mongodb.org/mongo-driver v1.17.4
+	github.com/stretchr/testify v1.11.1
+	go.mongodb.org/mongo-driver v1.17.9
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.38.2
-	github.com/go-pkgz/testutils v0.4.3
+	modernc.org/sqlite v1.53.0
+	github.com/go-pkgz/testutils v0.6.0
 )
 `)
 	err = os.WriteFile(filepath.Join(pkgDir, "go.mod"), goModContent, 0o644)

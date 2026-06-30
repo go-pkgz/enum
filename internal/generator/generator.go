@@ -124,15 +124,28 @@ func (g *Generator) SetGenerateYAML(v bool) { g.generateYAML = v }
 // the const name and its iota value, for example: {"statusActive": 1, "statusInactive": 2}
 func (g *Generator) Parse(dir string) error {
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return fmt.Errorf("failed to parse directory: %w", err)
+		return fmt.Errorf("failed to read directory: %w", err)
+	}
+
+	// group parsed files by package name; mirrors the behaviour of the deprecated parser.ParseDir
+	pkgFiles := map[string][]*ast.File{}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, filepath.Join(dir, entry.Name()), nil, parser.ParseComments)
+		if err != nil {
+			return fmt.Errorf("failed to parse directory: %w", err)
+		}
+		pkgFiles[file.Name.Name] = append(pkgFiles[file.Name.Name], file)
 	}
 
 	// process each package
-	for _, pkg := range pkgs {
-		g.pkgName = pkg.Name
-		for _, file := range pkg.Files {
+	for pkgName, files := range pkgFiles {
+		g.pkgName = pkgName
+		for _, file := range files {
 			g.parseFile(file)
 		}
 	}
