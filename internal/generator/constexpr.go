@@ -191,9 +191,20 @@ func (r *constResolver) resolve(name string) (typedValue, error) {
 
 // evalInt evaluates a constant expression and returns its exact integer value
 func (r *constResolver) evalInt(expr ast.Expr, iotaVal int64) (constant.Value, error) {
+	return r.evalTypedInt(expr, "", iotaVal)
+}
+
+// evalTypedInt evaluates a constant expression declared with the given type and returns its exact
+// integer value. the declared type matters, a float one holds the value at the width of its type.
+func (r *constResolver) evalTypedInt(expr ast.Expr, declaredType string, iotaVal int64) (constant.Value, error) {
 	v, err := r.eval(expr, iotaVal)
 	if err != nil {
 		return nil, err
+	}
+	if typ := r.builtinOf(declaredType); typ != "" {
+		if v, err = r.convert(v, typ); err != nil {
+			return nil, err
+		}
 	}
 	return toInt(v.value)
 }
@@ -420,6 +431,7 @@ func (r *constResolver) evalMinMax(e *ast.CallExpr, name string, iotaVal int64) 
 	}
 
 	var best typedValue
+	typ := ""
 	for i, arg := range e.Args {
 		v, err := r.eval(arg, iotaVal)
 		if err != nil {
@@ -428,11 +440,17 @@ func (r *constResolver) evalMinMax(e *ast.CallExpr, name string, iotaVal int64) 
 		if err := requireNumeric(v.value); err != nil {
 			return typedValue{}, err
 		}
+		if typ == "" {
+			typ = v.typ // a typed argument gives the result its type
+		}
 		if i == 0 || constant.Compare(v.value, op, best.value) {
 			best = v
 		}
 	}
-	return best, nil
+	if typ == "" {
+		return best, nil
+	}
+	return r.convert(best, typ)
 }
 
 // roundFloat drops the precision a float type cannot hold, the compiler stores a typed float

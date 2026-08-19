@@ -166,7 +166,7 @@ func (g *Generator) extractUnderlyingType(file *ast.File) {
 			for _, spec := range decl.Specs {
 				if tspec, ok := spec.(*ast.TypeSpec); ok && tspec.Name.Name == g.Type {
 					// found our type, extract the underlying type
-					if ident, ok := tspec.Type.(*ast.Ident); ok {
+					if ident, ok := unparen(tspec.Type).(*ast.Ident); ok {
 						g.underlyingType = ident.Name
 					}
 				}
@@ -180,6 +180,7 @@ func (g *Generator) extractUnderlyingType(file *ast.File) {
 // expression list of the previous spec, which is how the language defines iota based blocks.
 func (g *Generator) parseConstBlock(decl *ast.GenDecl, resolver *constResolver) error {
 	var lastValues []ast.Expr
+	var lastType ast.Expr
 
 	// the index of a spec inside the block is the value of iota for that spec
 	for iotaVal, spec := range decl.Specs {
@@ -188,7 +189,7 @@ func (g *Generator) parseConstBlock(decl *ast.GenDecl, resolver *constResolver) 
 			continue
 		}
 		if len(vspec.Values) > 0 {
-			lastValues = vspec.Values
+			lastValues, lastType = vspec.Values, vspec.Type
 		}
 
 		// parse aliases from inline comment (vspec.Comment is the inline comment)
@@ -216,7 +217,11 @@ func (g *Generator) parseConstBlock(decl *ast.GenDecl, resolver *constResolver) 
 				return fmt.Errorf("no value for const %s", name.Name)
 			}
 
-			value, err := resolver.evalInt(lastValues[i], int64(iotaVal))
+			declaredType := ""
+			if ident, ok := unparen(lastType).(*ast.Ident); ok {
+				declaredType = ident.Name
+			}
+			value, err := resolver.evalTypedInt(lastValues[i], declaredType, int64(iotaVal))
 			if err != nil {
 				return fmt.Errorf("failed to evaluate value of const %s: %w", name.Name, err)
 			}

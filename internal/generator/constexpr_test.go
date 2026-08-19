@@ -96,6 +96,8 @@ func TestConstResolverValues(t *testing.T) {
 		{"float64 rounds", "int(float64(1<<62 + 1))", "4611686018427387904"},
 		{"typed float arithmetic", "int(float32(1) / 3 * 3)", "1"},
 		{"string of a code point", `len(string(0x100))`, "2"},
+		{"min of a typed argument", "^max(2, uint8(1))", "253"},
+		{"max of a typed argument", "min(uint8(7), 9) + 1", "8"},
 	}
 
 	for _, tt := range tests {
@@ -439,6 +441,35 @@ const (
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "value: 9223372036854775808")
 	assert.Contains(t, string(content), "value: 18446744073709551615")
+}
+
+func TestParseDeclaredTypeApplied(t *testing.T) {
+	// the declared type of a constant shapes its value, a float one holds it at the width of the type
+	src := `package test
+type status int32
+const (
+	statusRounded (float32) = 16777217
+	statusPlain   status    = 5
+)
+`
+	gen, err := parseSrc(t, "status", src)
+	require.NoError(t, err)
+	assert.Equal(t, int64(16777216), constVal(t, gen, "statusRounded"))
+	assert.Equal(t, int64(5), constVal(t, gen, "statusPlain"))
+}
+
+func TestParseParenthesisedUnderlyingType(t *testing.T) {
+	// the underlying type is read through parentheses, a negative value does not fit it
+	src := `package test
+type code (uint8)
+const (
+	codeA code = 200
+	codeB code = -1
+)
+`
+	_, err := parseSrc(t, "code", src)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "const codeB: value -1 is negative but the type is uint8")
 }
 
 func TestParseValueOutOfRange(t *testing.T) {
