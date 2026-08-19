@@ -63,7 +63,7 @@ func TestGenerator(t *testing.T) {
 		// check required type definition
 		assert.Contains(t, string(content), "type Status struct {")
 		assert.Contains(t, string(content), "name  string")
-		assert.Contains(t, string(content), "value int")
+		assert.Contains(t, string(content), "value uint8")
 
 		// check all required methods are present
 		methods := []string{

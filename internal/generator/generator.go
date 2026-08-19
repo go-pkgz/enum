@@ -478,8 +478,7 @@ func parseAliasComment(comment *ast.CommentGroup) []string {
 	}
 	for _, c := range comment.List {
 		text := strings.TrimSpace(strings.TrimPrefix(c.Text, "//"))
-		if strings.HasPrefix(text, "enum:alias=") {
-			aliasStr := strings.TrimPrefix(text, "enum:alias=")
+		if aliasStr, ok := strings.CutPrefix(text, "enum:alias="); ok {
 			if aliasStr == "" {
 				return nil
 			}

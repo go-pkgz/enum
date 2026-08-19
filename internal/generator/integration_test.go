@@ -688,7 +688,7 @@ func (n NullableEnum) Value() (driver.Value, error) {
 }
 
 // Scan implements sql.Scanner
-func (n *NullableEnum) Scan(value interface{}) error {
+func (n *NullableEnum) Scan(value any) error {
 	if value == nil {
 		n.Valid = false
 		return nil

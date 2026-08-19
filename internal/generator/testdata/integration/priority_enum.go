@@ -4,11 +4,10 @@ package integration
 import (
 	"database/sql/driver"
 	"fmt"
-	"strings"
-
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/bsontype"
 	"gopkg.in/yaml.v3"
+	"strings"
 )
 
 // Priority is the exported type for the enum
@@ -117,13 +116,12 @@ var _priorityParseMap = map[string]Priority{
 	"critical": PriorityCritical,
 }
 
-// ParsePriority converts string to priority enum value
+// ParsePriority converts string to priority enum value.
+// Parsing is always case-insensitive.
 func ParsePriority(v string) (Priority, error) {
-
 	if val, ok := _priorityParseMap[strings.ToLower(v)]; ok {
 		return val, nil
 	}
-
 	return Priority{}, fmt.Errorf("invalid priority: %s", v)
 }
 
