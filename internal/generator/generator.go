@@ -216,7 +216,7 @@ func (g *Generator) parseConstBlock(decl *ast.GenDecl, resolver *constResolver) 
 				return fmt.Errorf("no value for const %s", name.Name)
 			}
 
-			value, err := resolver.eval(lastValues[i], int64(iotaVal))
+			value, err := resolver.evalInt(lastValues[i], int64(iotaVal))
 			if err != nil {
 				return fmt.Errorf("failed to evaluate value of const %s: %w", name.Name, err)
 			}

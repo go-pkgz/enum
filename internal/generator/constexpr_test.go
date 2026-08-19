@@ -23,14 +23,18 @@ func constVal(t *testing.T, gen *Generator, name string) int64 {
 	return v
 }
 
-// resolveSrc parses a go source and resolves a single constant from it
+// resolveSrc parses a go source and resolves a single constant from it to its integer value
 func resolveSrc(t *testing.T, src, name string) (constant.Value, error) {
 	t.Helper()
 	file, err := parser.ParseFile(token.NewFileSet(), "src.go", src, parser.ParseComments)
 	require.NoError(t, err)
 	r := newConstResolver()
 	r.addFile(file)
-	return r.resolve(name)
+	v, err := r.resolve(name)
+	if err != nil {
+		return nil, err
+	}
+	return toInt(v.value)
 }
 
 func TestConstResolverValues(t *testing.T) {
@@ -67,6 +71,18 @@ func TestConstResolverValues(t *testing.T) {
 		{"deeply nested", "((1 << 3) | (1 << 1)) - 2", "8"},
 		{"conversion builtin", "uint8(3)", "3"},
 		{"conversion nested", "uint16(1 << 9)", "512"},
+		{"complement of unsigned", "^uint8(0)", "255"},
+		{"complement of uint64", "^uint64(0)", "18446744073709551615"},
+		{"complement of signed", "^int8(0)", "-1"},
+		{"complement of untyped", "^0", "-1"},
+		{"float with integer value", "1.5 * 2", "3"},
+		{"float division", "5.0 / 2 * 2", "5"},
+		{"len of a string", `len("abc")`, "3"},
+		{"len with parentheses", `(len)(("abc"))`, "3"},
+		{"conversion with parentheses", "(uint8)(7)", "7"},
+		{"character arithmetic", "'a' + 1", "98"},
+		{"right shift of a negative", "-4 >> 1", "-2"},
+		{"beyond int64", "1<<62*4 - 1", "18446744073709551615"},
 	}
 
 	for _, tt := range tests {
@@ -88,12 +104,17 @@ func TestConstResolverErrors(t *testing.T) {
 		{"remainder by zero", "const x = 1 % 0", "division by zero"},
 		{"negative shift", "const x = 1 << -1", "negative shift count"},
 		{"huge shift", "const x = 1 << 100000", "too large"},
-		{"string literal", `const x = "str"`, "not an integer"},
+		{"string literal", `const x = "str"`, "not a number"},
 		{"float literal", "const x = 3.14", "not an integer"},
-		{"float expression", "const x = 1.5 + 1.5", "not an integer"},
+		{"fractional expression", "const x = 7.0 / 2", "not an integer"},
+		{"fractional sum", "const x = 1 + 1.5", "not an integer"},
 		{"unknown constant", "const x = missing + 1", "unknown constant missing"},
 		{"package reference", "const x = math.MaxInt8", "unsupported expression"},
-		{"function call", `const x = len("ab")`, "unsupported call to len"},
+		{"len of a constant", "const s = \"ab\"\nconst x = len(s)", "len is only supported"},
+		{"unsupported function", "const x = min(1, 2)", "unsupported call expression"},
+		{"conversion out of range", "const x = uint8(300)", "overflows uint8"},
+		{"conversion of a negative", "const x = uint8(-1)", "negative"},
+		{"typed declaration out of range", "const x int8 = 200", "overflows int8"},
 		{"comparison operator", "const x = 1 < 2", "unsupported binary operator"},
 		{"self reference", "const x = x + 1", "refers to itself"},
 		{"reference cycle", "const (\n\tx = y\n\ty = x\n)", "refers to itself"},
@@ -149,6 +170,53 @@ const (
 		require.NoError(t, err, name)
 		assert.Equal(t, expected, v.ExactString(), name)
 	}
+}
+
+func TestConstResolverTypedConstants(t *testing.T) {
+	src := `package p
+
+type flag uint8
+
+const (
+	flagNone flag = 0
+	flagOne  flag = 1
+)
+
+const (
+	all     = ^flagNone     // 255, the complement is taken within uint8
+	notOne  = ^flagOne      // 254
+	untyped = ^0            // -1, no type to complement within
+	wide    = ^myUint64(0)  // 18446744073709551615
+)
+
+type myUint64 = uint64
+`
+	for name, expected := range map[string]string{"all": "255", "notOne": "254", "untyped": "-1", "wide": "18446744073709551615"} {
+		v, err := resolveSrc(t, src, name)
+		require.NoError(t, err, name)
+		assert.Equal(t, expected, v.ExactString(), name)
+	}
+}
+
+func TestConstResolverIgnoresLocalConstants(t *testing.T) {
+	// a constant declared inside a function is out of scope for the enum values
+	src := `package p
+
+const base = 1
+
+func f() {
+	const base = 2
+	_ = base
+}
+
+const derived = base + 10
+`
+	v, err := resolveSrc(t, src, "derived")
+	require.NoError(t, err)
+	assert.Equal(t, "11", v.ExactString())
+
+	_, err = resolveSrc(t, src, "missing")
+	require.Error(t, err)
 }
 
 func TestCheckIntRange(t *testing.T) {
@@ -211,7 +279,7 @@ func TestConstResolverUnsupportedNodes(t *testing.T) {
 
 	_, err = literalValue(&ast.BasicLit{Kind: token.STRING, Value: `"str"`})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not an integer")
+	assert.Contains(t, err.Error(), "not a number")
 
 	_, err = r.resolve("nothing")
 	require.Error(t, err)
