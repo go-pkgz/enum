@@ -2,8 +2,8 @@ name: build
 
 on:
   push:
-    branches:
-    tags:
+    branches: ["**"]
+    tags: ["**"]
   pull_request:
 
 permissions:
@@ -40,7 +40,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: "v2.11.1"
+          version: "v2.12.2"
 
       - name: submit coverage
         run: |
