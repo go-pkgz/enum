@@ -5,11 +5,14 @@ import (
 	"go/ast"
 	"go/constant"
 	"go/token"
+	"math/big"
 	"strconv"
+	"unicode/utf8"
 )
 
-// maxShiftCount caps shift expressions so a malformed source can't ask for an enormous allocation
-const maxShiftCount = 512
+// maxShiftLeft caps a left shift so a malformed source can't ask for an enormous allocation. a right
+// shift needs no cap, shifting past the width of a value settles at 0 or -1.
+const maxShiftLeft = 512
 
 // intTypeInfo describes the width and signedness of a builtin integer type
 type intTypeInfo struct {
@@ -42,6 +45,14 @@ type typedValue struct {
 	value constant.Value
 	typ   string
 }
+
+// archSizedUnsigned are the unsigned types whose width is set by the target architecture, which makes
+// their complement a different value on a 32 and a 64 bit target
+var archSizedUnsigned = map[string]bool{"uint": true, "uintptr": true}
+
+// floatTypes are the builtin floating point types, they take part in constant arithmetic but the
+// value of an enum has to come out of it as an integer
+var floatTypes = map[string]bool{"float32": true, "float64": true}
 
 // constDecl is a constant declaration together with the iota value in effect where it appears
 type constDecl struct {
@@ -86,7 +97,7 @@ func (r *constResolver) addFile(file *ast.File) {
 				if !ok {
 					continue
 				}
-				if ident, ok := tspec.Type.(*ast.Ident); ok {
+				if ident, ok := unparen(tspec.Type).(*ast.Ident); ok {
 					r.types[tspec.Name.Name] = ident.Name
 				}
 			}
@@ -110,7 +121,7 @@ func (r *constResolver) addConstBlock(decl *ast.GenDecl) {
 			last, lastType = vspec.Values, vspec.Type
 		}
 		typ := ""
-		if ident, ok := lastType.(*ast.Ident); ok {
+		if ident, ok := unparen(lastType).(*ast.Ident); ok {
 			typ = ident.Name
 		}
 		for j, name := range vspec.Names {
@@ -125,14 +136,27 @@ func (r *constResolver) addConstBlock(decl *ast.GenDecl) {
 	}
 }
 
-// builtinOf resolves a type name to the builtin integer type it is defined as, empty when it is not
-// an integer type or the definition is not visible
+// builtinOf resolves a type name to the builtin number type it is defined as, empty when it is not a
+// number type or the definition is not visible. a type declared by the package is followed first, it
+// shadows a builtin of the same name.
 func (r *constResolver) builtinOf(name string) string {
-	for i := 0; name != "" && i < 10; i++ {
+	seen := map[string]struct{}{}
+	for name != "" {
+		if _, ok := seen[name]; ok {
+			return "" // a cycle, which does not compile either
+		}
+		seen[name] = struct{}{}
+		if next, ok := r.types[name]; ok {
+			name = next
+			continue
+		}
 		if _, ok := intTypes[name]; ok {
 			return name
 		}
-		name = r.types[name]
+		if floatTypes[name] || name == "string" {
+			return name
+		}
+		return ""
 	}
 	return ""
 }
@@ -218,6 +242,11 @@ func (r *constResolver) evalUnary(e *ast.UnaryExpr, iotaVal int64) (typedValue, 
 		}
 		prec := 0
 		if info, ok := intTypes[x.typ]; ok && !info.signed {
+			if archSizedUnsigned[x.typ] {
+				// ^uint(0) is 2^32-1 on a 32 bit target and 2^64-1 on a 64 bit one, there is no
+				// single value to write into the generated code
+				return typedValue{}, fmt.Errorf("complement of %s depends on the target architecture", x.typ)
+			}
 			prec = info.bits
 		}
 		return typedValue{value: constant.UnaryOp(e.Op, v, uint(prec)), typ: x.typ}, nil
@@ -241,9 +270,24 @@ func (r *constResolver) evalBinary(e *ast.BinaryExpr, iotaVal int64) (typedValue
 		return typedValue{}, err
 	}
 
+	if e.Op == token.ADD && x.value.Kind() == constant.String && y.value.Kind() == constant.String {
+		return typedValue{value: constant.BinaryOp(x.value, e.Op, y.value)}, nil
+	}
+
 	typ := x.typ
 	if typ == "" {
 		typ = y.typ
+	}
+
+	// a typed operand decides the type of the operation, the other one is converted to it. that is
+	// what makes x / 2.0 an integer division when x is a typed integer.
+	if typ != "" && typ != "string" {
+		if x, err = r.convert(x, typ); err != nil {
+			return typedValue{}, err
+		}
+		if y, err = r.convert(y, typ); err != nil {
+			return typedValue{}, err
+		}
 	}
 
 	switch e.Op {
@@ -254,17 +298,20 @@ func (r *constResolver) evalBinary(e *ast.BinaryExpr, iotaVal int64) (typedValue
 		if err := requireNumeric(y.value); err != nil {
 			return typedValue{}, err
 		}
-		if e.Op != token.QUO {
-			return typedValue{value: constant.BinaryOp(x.value, e.Op, y.value), typ: typ}, nil
-		}
-		if constant.Sign(y.value) == 0 {
-			return typedValue{}, fmt.Errorf("division by zero")
-		}
 		op := e.Op
-		if x.value.Kind() == constant.Int && y.value.Kind() == constant.Int {
-			op = token.QUO_ASSIGN // division of two integers is integer division, plain QUO yields a rational
+		if e.Op == token.QUO {
+			if constant.Sign(y.value) == 0 {
+				return typedValue{}, fmt.Errorf("division by zero")
+			}
+			if x.value.Kind() == constant.Int && y.value.Kind() == constant.Int {
+				op = token.QUO_ASSIGN // division of two integers is integer division, plain QUO yields a rational
+			}
 		}
-		return typedValue{value: constant.BinaryOp(x.value, op, y.value), typ: typ}, nil
+		v := constant.BinaryOp(x.value, op, y.value)
+		if floatTypes[typ] {
+			v = roundFloat(v, typ) // a typed float holds every result at the width of its type
+		}
+		return typedValue{value: v, typ: typ}, nil
 	case token.REM, token.AND, token.OR, token.XOR, token.AND_NOT:
 		xv, err := toInt(x.value)
 		if err != nil {
@@ -296,44 +343,119 @@ func (r *constResolver) evalShift(e *ast.BinaryExpr, x typedValue, iotaVal int64
 		return typedValue{}, fmt.Errorf("negative shift count %s", y.ExactString())
 	}
 	count, exact := constant.Uint64Val(y)
-	if !exact || count > maxShiftCount {
+	switch {
+	case e.Op == token.SHL && (!exact || count > maxShiftLeft):
 		return typedValue{}, fmt.Errorf("shift count %s is too large", y.ExactString())
+	case e.Op == token.SHR:
+		// a shift wider than the value itself keeps its result, clamp it to stay in range of uint
+		if width := bitLen(xv) + 1; !exact || count > width {
+			count = width
+		}
 	}
 	return typedValue{value: constant.Shift(xv, e.Op, uint(count)), typ: x.typ}, nil
 }
 
-// evalCall evaluates a conversion such as status(3) or uint8(1 << 2), and len of a string literal
+// evalCall evaluates a conversion such as status(3) or uint8(1 << 2), and the constant builtins
 func (r *constResolver) evalCall(e *ast.CallExpr, iotaVal int64) (typedValue, error) {
 	ident, ok := unparen(e.Fun).(*ast.Ident)
-	if !ok || len(e.Args) != 1 {
+	if !ok {
 		return typedValue{}, fmt.Errorf("unsupported call expression")
 	}
 
-	if ident.Name == "len" {
-		lit, ok := unparen(e.Args[0]).(*ast.BasicLit)
-		if !ok || lit.Kind != token.STRING {
-			return typedValue{}, fmt.Errorf("len is only supported for a string literal")
+	if !r.shadowed(ident.Name) {
+		switch ident.Name {
+		case "len":
+			return r.evalLen(e, iotaVal)
+		case "min", "max":
+			return r.evalMinMax(e, ident.Name, iotaVal)
 		}
-		s, err := strconv.Unquote(lit.Value)
-		if err != nil {
-			return typedValue{}, fmt.Errorf("invalid literal %s", lit.Value)
-		}
-		return typedValue{value: constant.MakeInt64(int64(len(s)))}, nil
 	}
 
-	_, declared := r.types[ident.Name]
-	if _, builtin := intTypes[ident.Name]; !declared && !builtin {
+	if len(e.Args) != 1 {
+		return typedValue{}, fmt.Errorf("unsupported call expression")
+	}
+	typ := r.builtinOf(ident.Name)
+	if typ == "" {
 		return typedValue{}, fmt.Errorf("unsupported call to %s", ident.Name)
 	}
 	v, err := r.eval(e.Args[0], iotaVal)
 	if err != nil {
 		return typedValue{}, err
 	}
-	typ := r.builtinOf(ident.Name)
-	if typ == "" {
-		return typedValue{}, fmt.Errorf("%s is not an integer type", ident.Name)
-	}
 	return r.convert(v, typ)
+}
+
+// shadowed reports whether the package declares something of its own under a predeclared name
+func (r *constResolver) shadowed(name string) bool {
+	if _, ok := r.types[name]; ok {
+		return true
+	}
+	_, ok := r.decls[name]
+	return ok
+}
+
+// evalLen evaluates len of a string constant
+func (r *constResolver) evalLen(e *ast.CallExpr, iotaVal int64) (typedValue, error) {
+	if len(e.Args) != 1 {
+		return typedValue{}, fmt.Errorf("len takes a single argument")
+	}
+	v, err := r.eval(e.Args[0], iotaVal)
+	if err != nil {
+		return typedValue{}, err
+	}
+	if v.value.Kind() != constant.String {
+		return typedValue{}, fmt.Errorf("len is only supported for a string constant")
+	}
+	return typedValue{value: constant.MakeInt64(int64(len(constant.StringVal(v.value))))}, nil
+}
+
+// evalMinMax evaluates the min and max builtins over constant arguments
+func (r *constResolver) evalMinMax(e *ast.CallExpr, name string, iotaVal int64) (typedValue, error) {
+	if len(e.Args) == 0 {
+		return typedValue{}, fmt.Errorf("%s takes at least one argument", name)
+	}
+	op := token.LSS
+	if name == "max" {
+		op = token.GTR
+	}
+
+	var best typedValue
+	for i, arg := range e.Args {
+		v, err := r.eval(arg, iotaVal)
+		if err != nil {
+			return typedValue{}, err
+		}
+		if err := requireNumeric(v.value); err != nil {
+			return typedValue{}, err
+		}
+		if i == 0 || constant.Compare(v.value, op, best.value) {
+			best = v
+		}
+	}
+	return best, nil
+}
+
+// roundFloat drops the precision a float type cannot hold, the compiler stores a typed float
+// constant at the width of its type
+func roundFloat(v constant.Value, typ string) constant.Value {
+	if typ == "float32" {
+		f, _ := constant.Float32Val(v)
+		return constant.MakeFloat64(float64(f))
+	}
+	f, _ := constant.Float64Val(v)
+	return constant.MakeFloat64(f)
+}
+
+// bitLen is the number of bits an integer value occupies
+func bitLen(v constant.Value) uint64 {
+	i, ok := constant.Val(v).(*big.Int)
+	if !ok {
+		return 64 // anything go/constant keeps as an int64
+	}
+	if n := i.BitLen(); n > 0 {
+		return uint64(n)
+	}
+	return 0
 }
 
 // unparen strips the parentheses around an expression
@@ -349,6 +471,27 @@ func unparen(expr ast.Expr) ast.Expr {
 
 // convert gives a value the named builtin type, reporting the values it cannot hold
 func (r *constResolver) convert(v typedValue, typ string) (typedValue, error) {
+	if typ == "string" {
+		if v.value.Kind() == constant.Int {
+			// converting a number to a string gives the utf-8 encoding of that code point
+			n, ok := constant.Int64Val(v.value)
+			if !ok || n < 0 || n > utf8.MaxRune {
+				n = utf8.RuneError
+			}
+			return typedValue{value: constant.MakeString(string(rune(n))), typ: typ}, nil
+		}
+		if v.value.Kind() != constant.String {
+			return typedValue{}, fmt.Errorf("value %s is not a string", v.value.String())
+		}
+		return typedValue{value: v.value, typ: typ}, nil
+	}
+	if floatTypes[typ] {
+		f := constant.ToFloat(v.value)
+		if f.Kind() == constant.Unknown {
+			return typedValue{}, fmt.Errorf("value %s is not a number", v.value.String())
+		}
+		return typedValue{value: roundFloat(f, typ), typ: typ}, nil
+	}
 	iv, err := toInt(v.value)
 	if err != nil {
 		return typedValue{}, err
@@ -364,6 +507,12 @@ func (r *constResolver) convert(v typedValue, typ string) (typedValue, error) {
 func literalValue(lit *ast.BasicLit) (constant.Value, error) {
 	switch lit.Kind {
 	case token.INT, token.FLOAT:
+		v := constant.MakeFromLiteral(lit.Value, lit.Kind, 0)
+		if v.Kind() == constant.Unknown {
+			return nil, fmt.Errorf("invalid literal %s", lit.Value)
+		}
+		return v, nil
+	case token.STRING:
 		v := constant.MakeFromLiteral(lit.Value, lit.Kind, 0)
 		if v.Kind() == constant.Unknown {
 			return nil, fmt.Errorf("invalid literal %s", lit.Value)

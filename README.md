@@ -103,9 +103,9 @@ By default the generated type supports `encoding.TextMarshaler`/`Unmarshaler` (u
 
 ### Constant Values
 
-Enum constants may use any integer constant expression the language allows: `iota` with arithmetic, shifts and bitwise
-operators, literals in any base, references to other constants of the same package, and conversions. As in Go, a constant
-without an expression repeats the expression of the preceding one.
+Enum constants may be written as constant expressions: `iota` with arithmetic, shifts and bitwise operators, literals in
+any base, `len`, `min` and `max`, references to other constants of the same package, and conversions. As in Go, a
+constant without an expression repeats the expression of the preceding one.
 
 ```go
 type permission uint8

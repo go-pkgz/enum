@@ -74,6 +74,7 @@ func TestConstResolverValues(t *testing.T) {
 		{"complement of unsigned", "^uint8(0)", "255"},
 		{"complement of uint64", "^uint64(0)", "18446744073709551615"},
 		{"complement of signed", "^int8(0)", "-1"},
+		{"complement of int", "^int(0)", "-1"},
 		{"complement of untyped", "^0", "-1"},
 		{"float with integer value", "1.5 * 2", "3"},
 		{"float division", "5.0 / 2 * 2", "5"},
@@ -83,6 +84,18 @@ func TestConstResolverValues(t *testing.T) {
 		{"character arithmetic", "'a' + 1", "98"},
 		{"right shift of a negative", "-4 >> 1", "-2"},
 		{"beyond int64", "1<<62*4 - 1", "18446744073709551615"},
+		{"shift right past the width", "1 >> 1000", "0"},
+		{"shift right of a negative past the width", "-1 >> 1000", "-1"},
+		{"float conversion", "1 / float64(2) * 6", "3"},
+		{"len of a concatenation", `len("a" + "b")`, "2"},
+		{"typed integer and float operand", "uint8(5) & 3.0", "1"},
+		{"min", "min(0, 1)", "0"},
+		{"max", "max(3, 2, 7)", "7"},
+		{"min of mixed kinds", "min(1, 2.5)", "1"},
+		{"float32 rounds", "int(float32(16777217))", "16777216"},
+		{"float64 rounds", "int(float64(1<<62 + 1))", "4611686018427387904"},
+		{"typed float arithmetic", "int(float32(1) / 3 * 3)", "1"},
+		{"string of a code point", `len(string(0x100))`, "2"},
 	}
 
 	for _, tt := range tests {
@@ -104,17 +117,20 @@ func TestConstResolverErrors(t *testing.T) {
 		{"remainder by zero", "const x = 1 % 0", "division by zero"},
 		{"negative shift", "const x = 1 << -1", "negative shift count"},
 		{"huge shift", "const x = 1 << 100000", "too large"},
-		{"string literal", `const x = "str"`, "not a number"},
+		{"string literal", `const x = "str"`, "not an integer"},
+		{"len of a number", "const x = len(1)", "only supported for a string"},
 		{"float literal", "const x = 3.14", "not an integer"},
 		{"fractional expression", "const x = 7.0 / 2", "not an integer"},
 		{"fractional sum", "const x = 1 + 1.5", "not an integer"},
 		{"unknown constant", "const x = missing + 1", "unknown constant missing"},
 		{"package reference", "const x = math.MaxInt8", "unsupported expression"},
-		{"len of a constant", "const s = \"ab\"\nconst x = len(s)", "len is only supported"},
-		{"unsupported function", "const x = min(1, 2)", "unsupported call expression"},
+		{"unsupported function", "const x = real(3+4i)", "unsupported call to real"},
+		{"len of two arguments", `const x = len("a", "b")`, "single argument"},
 		{"conversion out of range", "const x = uint8(300)", "overflows uint8"},
 		{"conversion of a negative", "const x = uint8(-1)", "negative"},
 		{"typed declaration out of range", "const x int8 = 200", "overflows int8"},
+		{"complement of uint", "const x = ^uint(0)", "depends on the target architecture"},
+		{"complement of uintptr", "const x = ^uintptr(0)", "depends on the target architecture"},
 		{"comparison operator", "const x = 1 < 2", "unsupported binary operator"},
 		{"self reference", "const x = x + 1", "refers to itself"},
 		{"reference cycle", "const (\n\tx = y\n\ty = x\n)", "refers to itself"},
@@ -192,6 +208,52 @@ const (
 type myUint64 = uint64
 `
 	for name, expected := range map[string]string{"all": "255", "notOne": "254", "untyped": "-1", "wide": "18446744073709551615"} {
+		v, err := resolveSrc(t, src, name)
+		require.NoError(t, err, name)
+		assert.Equal(t, expected, v.ExactString(), name)
+	}
+}
+
+func TestConstResolverNumberTypes(t *testing.T) {
+	// arithmetic follows the type of its operands, division by a float is not integer division
+	src := `package p
+
+type uint8 = uint16
+type lvl int32
+type l1 = l2
+type l2 = l3
+type l3 = l4
+type l4 = l5
+type l5 = l6
+type l6 = l7
+type l7 = l8
+type l8 = l9
+type l9 = l10
+type l10 = l11
+type l11 = uint8
+
+const (
+	d      float64 = 2
+	viaD           = 5 / d * 2   // 5, not 4
+	whole  int     = 5
+	halved         = whole / 2.0 // 2, a typed integer divides as an integer
+	tl     lvl     = 7
+	scaled         = tl*2 + 1    // 15
+	shadow         = ^uint8(0)   // 65535, the package declaration shadows the builtin
+	text           = "hello"
+	size           = len(text)
+	named          = len(str("abcd"))
+	paren  (uint8) = 0
+	compl          = ^paren      // 65535, uint8 here is the package declaration
+	chained        = ^l1(0)      // the same, reached through eleven aliases
+)
+
+type str (string)
+`
+	for name, expected := range map[string]string{
+		"viaD": "5", "halved": "2", "scaled": "15", "shadow": "65535", "size": "5", "named": "4",
+		"compl": "65535", "chained": "65535",
+	} {
 		v, err := resolveSrc(t, src, name)
 		require.NoError(t, err, name)
 		assert.Equal(t, expected, v.ExactString(), name)
@@ -277,7 +339,7 @@ func TestConstResolverUnsupportedNodes(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid literal")
 
-	_, err = literalValue(&ast.BasicLit{Kind: token.STRING, Value: `"str"`})
+	_, err = literalValue(&ast.BasicLit{Kind: token.IMAG, Value: "1i"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a number")
 
