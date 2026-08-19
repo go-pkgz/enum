@@ -4,6 +4,7 @@ package status
 import (
 	"database/sql/driver"
 	"fmt"
+	"strings"
 )
 
 // Status is the exported type for the enum
@@ -74,13 +75,12 @@ var _statusParseMap = map[string]Status{
 	"blocked":  StatusBlocked,
 }
 
-// ParseStatus converts string to status enum value
+// ParseStatus converts string to status enum value.
+// Parsing is always case-insensitive.
 func ParseStatus(v string) (Status, error) {
-
-	if val, ok := _statusParseMap[v]; ok {
+	if val, ok := _statusParseMap[strings.ToLower(v)]; ok {
 		return val, nil
 	}
-
 	return Status{}, fmt.Errorf("invalid status: %s", v)
 }
 
