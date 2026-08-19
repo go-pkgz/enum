@@ -446,10 +446,10 @@ func TestRuntimeIntegration(t *testing.T) {
 go 1.25
 
 require (
-	github.com/stretchr/testify v1.11.1
+	github.com/stretchr/testify v1.12.0
 	go.mongodb.org/mongo-driver v1.17.9
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.53.0
+	modernc.org/sqlite v1.56.0
 	github.com/go-pkgz/testutils v0.6.0
 )
 `)
