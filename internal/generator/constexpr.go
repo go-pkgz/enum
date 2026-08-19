@@ -5,14 +5,17 @@ import (
 	"go/ast"
 	"go/constant"
 	"go/token"
-	"math/big"
 	"strconv"
 	"unicode/utf8"
 )
 
-// maxShiftLeft caps a left shift so a malformed source can't ask for an enormous allocation. a right
-// shift needs no cap, shifting past the width of a value settles at 0 or -1.
-const maxShiftLeft = 512
+const (
+	// maxShiftLeft caps a left shift so a malformed source can't ask for an enormous allocation
+	maxShiftLeft = 512
+	// maxShiftRight bounds a right shift count, which only has to reach past the width of the value;
+	// no constant comes near it, and it keeps the count in range of uint
+	maxShiftRight = 1 << 20
+)
 
 // intTypeInfo describes the width and signedness of a builtin integer type
 type intTypeInfo struct {
@@ -357,11 +360,9 @@ func (r *constResolver) evalShift(e *ast.BinaryExpr, x typedValue, iotaVal int64
 	switch {
 	case e.Op == token.SHL && (!exact || count > maxShiftLeft):
 		return typedValue{}, fmt.Errorf("shift count %s is too large", y.ExactString())
-	case e.Op == token.SHR:
-		// a shift wider than the value itself keeps its result, clamp it to stay in range of uint
-		if width := bitLen(xv) + 1; !exact || count > width {
-			count = width
-		}
+	case e.Op == token.SHR && (!exact || count > maxShiftRight):
+		// shifting further than the value is wide keeps giving the same result
+		count = maxShiftRight
 	}
 	return typedValue{value: constant.Shift(xv, e.Op, uint(count)), typ: x.typ}, nil
 }
@@ -431,7 +432,7 @@ func (r *constResolver) evalMinMax(e *ast.CallExpr, name string, iotaVal int64) 
 	}
 
 	var best typedValue
-	typ := ""
+	typ, anyFloat := "", false
 	for i, arg := range e.Args {
 		v, err := r.eval(arg, iotaVal)
 		if err != nil {
@@ -443,14 +444,19 @@ func (r *constResolver) evalMinMax(e *ast.CallExpr, name string, iotaVal int64) 
 		if typ == "" {
 			typ = v.typ // a typed argument gives the result its type
 		}
+		anyFloat = anyFloat || v.value.Kind() == constant.Float
 		if i == 0 || constant.Compare(v.value, op, best.value) {
 			best = v
 		}
 	}
-	if typ == "" {
-		return best, nil
+	if typ != "" {
+		return r.convert(best, typ)
 	}
-	return r.convert(best, typ)
+	if anyFloat {
+		// an untyped float argument makes the result untyped float, whichever argument won
+		return typedValue{value: constant.ToFloat(best.value)}, nil
+	}
+	return best, nil
 }
 
 // roundFloat drops the precision a float type cannot hold, the compiler stores a typed float
@@ -462,18 +468,6 @@ func roundFloat(v constant.Value, typ string) constant.Value {
 	}
 	f, _ := constant.Float64Val(v)
 	return constant.MakeFloat64(f)
-}
-
-// bitLen is the number of bits an integer value occupies
-func bitLen(v constant.Value) uint64 {
-	i, ok := constant.Val(v).(*big.Int)
-	if !ok {
-		return 64 // anything go/constant keeps as an int64
-	}
-	if n := i.BitLen(); n > 0 {
-		return uint64(n)
-	}
-	return 0
 }
 
 // unparen strips the parentheses around an expression
@@ -524,13 +518,7 @@ func (r *constResolver) convert(v typedValue, typ string) (typedValue, error) {
 // the language allows
 func literalValue(lit *ast.BasicLit) (constant.Value, error) {
 	switch lit.Kind {
-	case token.INT, token.FLOAT:
-		v := constant.MakeFromLiteral(lit.Value, lit.Kind, 0)
-		if v.Kind() == constant.Unknown {
-			return nil, fmt.Errorf("invalid literal %s", lit.Value)
-		}
-		return v, nil
-	case token.STRING:
+	case token.INT, token.FLOAT, token.STRING:
 		v := constant.MakeFromLiteral(lit.Value, lit.Kind, 0)
 		if v.Kind() == constant.Unknown {
 			return nil, fmt.Errorf("invalid literal %s", lit.Value)

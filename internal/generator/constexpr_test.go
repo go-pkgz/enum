@@ -98,6 +98,13 @@ func TestConstResolverValues(t *testing.T) {
 		{"string of a code point", `len(string(0x100))`, "2"},
 		{"min of a typed argument", "^max(2, uint8(1))", "253"},
 		{"max of a typed argument", "min(uint8(7), 9) + 1", "8"},
+		{"max with an untyped float", "max(5, 4.0) / 2 * 10", "25"},
+		{"min with an untyped float", "min(5, 6.0) / 2 * 10", "25"},
+		{"max of integers only", "max(5, 4) / 2 * 10", "20"},
+		{"string of a value out of range", "len(string(-1))", "3"},
+		{"shift right of a wide value", "1<<70 >> 2000", "0"},
+		// the compiler rejects a shift count this large outright, the result is still 0
+		{"shift right past the bound", "1 >> 2000000", "0"},
 	}
 
 	for _, tt := range tests {
@@ -136,6 +143,29 @@ func TestConstResolverErrors(t *testing.T) {
 		{"comparison operator", "const x = 1 < 2", "unsupported binary operator"},
 		{"self reference", "const x = x + 1", "refers to itself"},
 		{"reference cycle", "const (\n\tx = y\n\ty = x\n)", "refers to itself"},
+		{"failing operand of a negation", "const x = -missing", "unknown constant missing"},
+		{"complement of a string", `const x = ^"str"`, "not an integer"},
+		{"failing right operand", "const x = 1 + missing", "unknown constant missing"},
+		{"operand out of range for the type", "const x = uint8(1) + 300", "overflows uint8"},
+		{"string added to a number", `const x = 1 + "s"`, "not a number"},
+		{"number added to a string", `const x = "s" + 1`, "not a number"},
+		{"fractional remainder", "const x = 1.5 % 2", "not an integer"},
+		{"remainder by a fraction", "const x = 2 % 1.5", "not an integer"},
+		{"shift of a string", `const x = "s" << 1`, "not an integer"},
+		{"failing shift count", "const x = 1 << missing", "unknown constant missing"},
+		{"fractional shift count", "const x = 1 << 1.5", "not an integer"},
+		{"conversion with two arguments", "const x = uint8(1, 2)", "unsupported call expression"},
+		{"min without arguments", "const x = min()", "at least one argument"},
+		{"failing min argument", "const x = min(missing, 1)", "unknown constant missing"},
+		{"min of a string", `const x = min("a", 1)`, "not a number"},
+		{"failing len argument", "const x = len(missing)", "unknown constant missing"},
+		{"failing conversion argument", "const x = uint8(missing)", "unknown constant missing"},
+		{"fractional conversion", "const x = uint8(1.5)", "not an integer"},
+		{"float conversion of a string", `const x = float64("s")`, "not a number"},
+		{"string conversion of a fraction", "const (\n\tx = str(1.5)\n)\ntype str string", "not a string"},
+		{"call of an expression", "const x = (1 + 1)(2)", "unsupported call expression"},
+		{"failing left operand of a typed sum", "const x = 300 + uint8(1)", "overflows uint8"},
+		{"alias cycle", "const x = ^a(0)\ntype a = b\ntype b = a", "unsupported call to a"},
 	}
 
 	for _, tt := range tests {
@@ -322,6 +352,27 @@ func TestCheckIntRange(t *testing.T) {
 	}
 }
 
+func TestConstResolverDeclarations(t *testing.T) {
+	// a name declared twice keeps the first declaration, which is what a compiling package has
+	v, err := resolveSrc(t, "package p\nconst x = 1\nconst x = 2\n", "x")
+	require.NoError(t, err)
+	assert.Equal(t, "1", v.ExactString())
+
+	// specs that are not value or type declarations are skipped
+	r := newConstResolver()
+	r.addFile(&ast.File{
+		Name: &ast.Ident{Name: "p"},
+		Decls: []ast.Decl{
+			&ast.GenDecl{Tok: token.TYPE, Specs: []ast.Spec{&ast.ImportSpec{}}},
+			&ast.GenDecl{Tok: token.CONST, Specs: []ast.Spec{&ast.ImportSpec{}}},
+			&ast.GenDecl{Tok: token.IMPORT, Specs: []ast.Spec{&ast.ImportSpec{}}},
+			&ast.FuncDecl{Name: &ast.Ident{Name: "f"}},
+		},
+	})
+	assert.Empty(t, r.decls)
+	assert.Empty(t, r.types)
+}
+
 func TestConstResolverUnsupportedNodes(t *testing.T) {
 	r := newConstResolver()
 
@@ -344,6 +395,18 @@ func TestConstResolverUnsupportedNodes(t *testing.T) {
 	_, err = literalValue(&ast.BasicLit{Kind: token.IMAG, Value: "1i"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a number")
+
+	for _, lit := range []*ast.BasicLit{
+		{Kind: token.INT, Value: "12abc"},
+		{Kind: token.FLOAT, Value: "1.2.3"},
+		{Kind: token.CHAR, Value: "'"},
+		{Kind: token.CHAR, Value: "abc"},
+		{Kind: token.CHAR, Value: `'\q'`},
+	} {
+		_, err = literalValue(lit)
+		require.Error(t, err, lit.Value)
+		assert.Contains(t, err.Error(), "invalid literal", lit.Value)
+	}
 
 	_, err = r.resolve("nothing")
 	require.Error(t, err)
@@ -470,6 +533,32 @@ const (
 	_, err := parseSrc(t, "code", src)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "const codeB: value -1 is negative but the type is uint8")
+}
+
+func TestParseUntypedValueOutOfRange(t *testing.T) {
+	// a constant without a type of its own still has to fit the underlying type of the enum
+	src := `package test
+type small int8
+const (
+	smallA small = 100
+	smallB       = 200
+)
+`
+	_, err := parseSrc(t, "small", src)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "const smallB: value 200 overflows int8")
+}
+
+func TestParseConstWithoutValue(t *testing.T) {
+	src := `package test
+type status int
+const (
+	statusA
+)
+`
+	_, err := parseSrc(t, "status", src)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no value for const statusA")
 }
 
 func TestParseValueOutOfRange(t *testing.T) {

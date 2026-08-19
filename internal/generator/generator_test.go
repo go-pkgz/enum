@@ -1449,6 +1449,7 @@ func TestParseAliasComment(t *testing.T) {
 		{"multiple aliases", "// enum:alias=rw,read-write", []string{"rw", "read-write"}},
 		{"with whitespace", "// enum:alias= rw , read-write ", []string{"rw", "read-write"}},
 		{"empty value", "// enum:alias=", nil},
+		{"only separators", "// enum:alias=,,", nil},
 		{"empty between commas", "// enum:alias=a,,b", []string{"a", "b"}},
 		{"no alias directive", "// some comment", nil},
 		{"nil comment", "", nil},
