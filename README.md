@@ -101,6 +101,25 @@ go generate ./...
 
 By default the generated type supports `encoding.TextMarshaler`/`Unmarshaler` (used by `encoding/json`). To include other integrations, enable flags as needed (see below).
 
+### Constant Values
+
+Enum constants may use any integer constant expression the language allows: `iota` with arithmetic, shifts and bitwise
+operators, literals in any base, references to other constants of the same package, and conversions. As in Go, a constant
+without an expression repeats the expression of the preceding one.
+
+```go
+type permission uint8
+
+const (
+    permissionRead  permission = 1 << iota // 1
+    permissionWrite                        // 2
+    permissionAdmin                        // 4
+)
+```
+
+The generator reports an error when a value cannot be evaluated, for instance when it refers to a constant of another
+package, and when a value does not fit the underlying type of the enum.
+
 ### Generator Options
 
 - `-type` (required): the name of the type to generate enum for (must be lowercase/private)

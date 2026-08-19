@@ -381,10 +381,10 @@ func TestGeneratorValues(t *testing.T) {
 	err = gen.Parse("testdata")
 	require.NoError(t, err)
 
-	assert.Equal(t, 0, gen.values["statusUnknown"].value, "unknown should be 0")
-	assert.Equal(t, 1, gen.values["statusActive"].value, "active should be 1")
-	assert.Equal(t, 2, gen.values["statusInactive"].value, "inactive should be 2")
-	assert.Equal(t, 3, gen.values["statusBlocked"].value, "blocked should be 3")
+	assert.Equal(t, int64(0), constVal(t, gen, "statusUnknown"), "unknown should be 0")
+	assert.Equal(t, int64(1), constVal(t, gen, "statusActive"), "active should be 1")
+	assert.Equal(t, int64(2), constVal(t, gen, "statusInactive"), "inactive should be 2")
+	assert.Equal(t, int64(3), constVal(t, gen, "statusBlocked"), "blocked should be 3")
 }
 
 func TestRepeatValues(t *testing.T) {
@@ -396,10 +396,10 @@ func TestRepeatValues(t *testing.T) {
 	err = gen.Parse("testdata")
 	require.NoError(t, err)
 
-	assert.Equal(t, 10, gen.values["repeatValuesFirst"].value, "First should be 10")
-	assert.Equal(t, 10, gen.values["repeatValuesSecond"].value, "Second should repeat the value 10")
-	assert.Equal(t, 20, gen.values["repeatValuesThird"].value, "Third should be 20")
-	assert.Equal(t, 20, gen.values["repeatValuesFourth"].value, "Fourth should repeat the value 20")
+	assert.Equal(t, int64(10), constVal(t, gen, "repeatValuesFirst"), "First should be 10")
+	assert.Equal(t, int64(10), constVal(t, gen, "repeatValuesSecond"), "Second should repeat the value 10")
+	assert.Equal(t, int64(20), constVal(t, gen, "repeatValuesThird"), "Third should be 20")
+	assert.Equal(t, int64(20), constVal(t, gen, "repeatValuesFourth"), "Fourth should repeat the value 20")
 }
 
 func TestSQLNullHandling(t *testing.T) {
@@ -511,9 +511,9 @@ func TestBinaryExprValues(t *testing.T) {
 	assert.Contains(t, gen.values, "binaryExprThird", "Third value should be found")
 
 	// check that values are correct (iota + 1)
-	assert.Equal(t, 1, gen.values["binaryExprFirst"].value, "First should be 1")
-	assert.Equal(t, 2, gen.values["binaryExprSecond"].value, "Second should be 2")
-	assert.Equal(t, 3, gen.values["binaryExprThird"].value, "Third should be 3")
+	assert.Equal(t, int64(1), constVal(t, gen, "binaryExprFirst"), "First should be 1")
+	assert.Equal(t, int64(2), constVal(t, gen, "binaryExprSecond"), "Second should be 2")
+	assert.Equal(t, int64(3), constVal(t, gen, "binaryExprThird"), "Third should be 3")
 
 	// generate the enum and verify it contains all constants
 	err = gen.Generate()
@@ -854,10 +854,10 @@ const (
 		require.NoError(t, err)
 
 		// verify negative value was parsed correctly
-		assert.Equal(t, -1, gen.values["errorCodeNone"].value)
-		assert.Equal(t, 0, gen.values["errorCodeOK"].value)
-		assert.Equal(t, 400, gen.values["errorCodeBadRequest"].value)
-		assert.Equal(t, 404, gen.values["errorCodeNotFound"].value)
+		assert.Equal(t, int64(-1), constVal(t, gen, "errorCodeNone"))
+		assert.Equal(t, int64(0), constVal(t, gen, "errorCodeOK"))
+		assert.Equal(t, int64(400), constVal(t, gen, "errorCodeBadRequest"))
+		assert.Equal(t, int64(404), constVal(t, gen, "errorCodeNotFound"))
 
 		err = gen.Generate()
 		require.NoError(t, err)
@@ -876,7 +876,7 @@ const (
 	t.Run("invalid negative expression", func(t *testing.T) {
 		tmpDir := t.TempDir()
 
-		// create enum with invalid negative expression (should default to 0)
+		// create enum with an expression that has no integer value
 		enumFile := filepath.Join(tmpDir, "test.go")
 		err := os.WriteFile(enumFile, []byte(`package test
 
@@ -891,13 +891,9 @@ const (
 		gen, err := New("status", tmpDir)
 		require.NoError(t, err)
 
-		// this should parse but the invalid value should become 0
 		err = gen.Parse(tmpDir)
-		require.NoError(t, err)
-
-		// verify invalid negative expression defaulted to 0
-		assert.Equal(t, 0, gen.values["statusInvalid"].value)
-		assert.Equal(t, 1, gen.values["statusOK"].value)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to evaluate value of const statusInvalid")
 	})
 }
 
@@ -1150,9 +1146,9 @@ func TestBinaryExpressionEdgeCases(t *testing.T) {
 		require.NoError(t, err)
 
 		// check values
-		assert.Equal(t, 0, gen.values["mulDivTypeA"].value)
-		assert.Equal(t, 2, gen.values["mulDivTypeB"].value)
-		assert.Equal(t, 4, gen.values["mulDivTypeC"].value)
+		assert.Equal(t, int64(0), constVal(t, gen, "mulDivTypeA"))
+		assert.Equal(t, int64(2), constVal(t, gen, "mulDivTypeB"))
+		assert.Equal(t, int64(4), constVal(t, gen, "mulDivTypeC"))
 	})
 
 	t.Run("right-side iota addition", func(t *testing.T) {
@@ -1164,8 +1160,8 @@ func TestBinaryExpressionEdgeCases(t *testing.T) {
 		require.NoError(t, err)
 
 		// check values
-		assert.Equal(t, 10, gen.values["rightIotaTypeX"].value)
-		assert.Equal(t, 11, gen.values["rightIotaTypeY"].value)
+		assert.Equal(t, int64(10), constVal(t, gen, "rightIotaTypeX"))
+		assert.Equal(t, int64(11), constVal(t, gen, "rightIotaTypeY"))
 	})
 
 	t.Run("subtraction with iota", func(t *testing.T) {
@@ -1177,77 +1173,10 @@ func TestBinaryExpressionEdgeCases(t *testing.T) {
 		require.NoError(t, err)
 
 		// check values
-		assert.Equal(t, 100, gen.values["subTypeA"].value)
-		assert.Equal(t, 99, gen.values["subTypeB"].value)
-		assert.Equal(t, 98, gen.values["subTypeC"].value)
+		assert.Equal(t, int64(100), constVal(t, gen, "subTypeA"))
+		assert.Equal(t, int64(99), constVal(t, gen, "subTypeB"))
+		assert.Equal(t, int64(98), constVal(t, gen, "subTypeC"))
 	})
-}
-
-func TestConvertLiteralToInt(t *testing.T) {
-	tests := []struct {
-		name      string
-		literal   *ast.BasicLit
-		expected  int
-		expectErr bool
-	}{
-		{
-			name:     "integer literal",
-			literal:  &ast.BasicLit{Kind: token.INT, Value: "42"},
-			expected: 42,
-		},
-		{
-			name:     "character literal single quote",
-			literal:  &ast.BasicLit{Kind: token.CHAR, Value: "'A'"},
-			expected: 65,
-		},
-		{
-			name:     "character literal escape",
-			literal:  &ast.BasicLit{Kind: token.CHAR, Value: "'\\n'"},
-			expected: 10,
-		},
-		{
-			name:      "invalid integer format",
-			literal:   &ast.BasicLit{Kind: token.INT, Value: "not_a_number"},
-			expectErr: true,
-		},
-		{
-			name:      "multi-character literal",
-			literal:   &ast.BasicLit{Kind: token.CHAR, Value: "'AB'"},
-			expectErr: true,
-		},
-		{
-			name:      "invalid character literal",
-			literal:   &ast.BasicLit{Kind: token.CHAR, Value: "invalid"},
-			expectErr: true,
-		},
-		{
-			name:      "unsupported literal kind",
-			literal:   &ast.BasicLit{Kind: token.FLOAT, Value: "3.14"},
-			expectErr: true,
-		},
-		{
-			name:     "character literal tab",
-			literal:  &ast.BasicLit{Kind: token.CHAR, Value: "'\\t'"},
-			expected: 9,
-		},
-		{
-			name:     "character literal null",
-			literal:  &ast.BasicLit{Kind: token.CHAR, Value: "'\\x00'"},
-			expected: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := ConvertLiteralToInt(tt.literal)
-			if tt.expectErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tt.expected, result)
-			}
-		})
-	}
 }
 
 func TestUnderscorePlaceholderConstants(t *testing.T) {
@@ -1271,9 +1200,9 @@ func TestUnderscorePlaceholderConstants(t *testing.T) {
 	require.NoError(t, err)
 
 	// check that underscore placeholders were skipped but iota still incremented
-	assert.Equal(t, 0, gen.values["statusFirst"].value)
-	assert.Equal(t, 2, gen.values["statusSecond"].value) // iota=2 (after _ at iota=1)
-	assert.Equal(t, 4, gen.values["statusThird"].value)  // iota=4 (after _ at iota=3)
+	assert.Equal(t, int64(0), constVal(t, gen, "statusFirst"))
+	assert.Equal(t, int64(2), constVal(t, gen, "statusSecond")) // iota=2 (after _ at iota=1)
+	assert.Equal(t, int64(4), constVal(t, gen, "statusThird"))  // iota=4 (after _ at iota=3)
 	_, exists := gen.values["_"]
 	assert.False(t, exists, "underscore should not be in values")
 }
@@ -1298,10 +1227,10 @@ func TestDivisionOperationsWithIota(t *testing.T) {
 	require.NoError(t, err)
 
 	// iota/2: 0/2=0, 1/2=0, 2/2=1, 3/2=1
-	assert.Equal(t, 0, gen.values["divTypeA"].value)
-	assert.Equal(t, 0, gen.values["divTypeB"].value)
-	assert.Equal(t, 1, gen.values["divTypeC"].value)
-	assert.Equal(t, 1, gen.values["divTypeD"].value)
+	assert.Equal(t, int64(0), constVal(t, gen, "divTypeA"))
+	assert.Equal(t, int64(0), constVal(t, gen, "divTypeB"))
+	assert.Equal(t, int64(1), constVal(t, gen, "divTypeC"))
+	assert.Equal(t, int64(1), constVal(t, gen, "divTypeD"))
 }
 
 func TestSubtractionWithIota(t *testing.T) {
@@ -1324,11 +1253,11 @@ func TestSubtractionWithIota(t *testing.T) {
 	err = gen.Parse(tmpDir)
 	require.NoError(t, err)
 
-	assert.Equal(t, 10, gen.values["subTypeA"].value)
-	assert.Equal(t, 9, gen.values["subTypeB"].value)
-	assert.Equal(t, 8, gen.values["subTypeC"].value)
-	assert.Equal(t, 2, gen.values["subTypeD"].value)
-	assert.Equal(t, 3, gen.values["subTypeE"].value)
+	assert.Equal(t, int64(10), constVal(t, gen, "subTypeA"))
+	assert.Equal(t, int64(9), constVal(t, gen, "subTypeB"))
+	assert.Equal(t, int64(8), constVal(t, gen, "subTypeC"))
+	assert.Equal(t, int64(2), constVal(t, gen, "subTypeD"))
+	assert.Equal(t, int64(3), constVal(t, gen, "subTypeE"))
 }
 
 func TestEmptyConstBlock(t *testing.T) {
@@ -1350,7 +1279,7 @@ func TestEmptyConstBlock(t *testing.T) {
 	err = gen.Parse(tmpDir)
 	require.NoError(t, err)
 
-	assert.Equal(t, 0, gen.values["emptyTypeFirst"].value)
+	assert.Equal(t, int64(0), constVal(t, gen, "emptyTypeFirst"))
 }
 
 func TestZeroBinaryExpression(t *testing.T) {
@@ -1370,188 +1299,8 @@ func TestZeroBinaryExpression(t *testing.T) {
 	err = gen.Parse(tmpDir)
 	require.NoError(t, err)
 
-	assert.Equal(t, 0, gen.values["zeroTypeA"].value)
-	assert.Equal(t, 1, gen.values["zeroTypeB"].value)
-}
-
-func TestEvaluateBinaryExpr(t *testing.T) {
-	tests := []struct {
-		name         string
-		expr         *ast.BinaryExpr
-		iotaVal      int
-		expectedVal  int
-		expectedIota bool
-		expectErr    bool
-	}{
-		{
-			name: "iota + 1",
-			expr: &ast.BinaryExpr{
-				X:  &ast.Ident{Name: "iota"},
-				Op: token.ADD,
-				Y:  &ast.BasicLit{Kind: token.INT, Value: "1"},
-			},
-			iotaVal:      0,
-			expectedVal:  1,
-			expectedIota: true,
-		},
-		{
-			name: "iota * 2",
-			expr: &ast.BinaryExpr{
-				X:  &ast.Ident{Name: "iota"},
-				Op: token.MUL,
-				Y:  &ast.BasicLit{Kind: token.INT, Value: "2"},
-			},
-			iotaVal:      3,
-			expectedVal:  6,
-			expectedIota: true,
-		},
-		{
-			name: "100 - iota",
-			expr: &ast.BinaryExpr{
-				X:  &ast.BasicLit{Kind: token.INT, Value: "100"},
-				Op: token.SUB,
-				Y:  &ast.Ident{Name: "iota"},
-			},
-			iotaVal:      2,
-			expectedVal:  98,
-			expectedIota: true,
-		},
-		{
-			name: "iota - 5",
-			expr: &ast.BinaryExpr{
-				X:  &ast.Ident{Name: "iota"},
-				Op: token.SUB,
-				Y:  &ast.BasicLit{Kind: token.INT, Value: "5"},
-			},
-			iotaVal:      10,
-			expectedVal:  5,
-			expectedIota: true,
-		},
-		{
-			name: "10 + iota",
-			expr: &ast.BinaryExpr{
-				X:  &ast.BasicLit{Kind: token.INT, Value: "10"},
-				Op: token.ADD,
-				Y:  &ast.Ident{Name: "iota"},
-			},
-			iotaVal:      2,
-			expectedVal:  12,
-			expectedIota: true,
-		},
-		{
-			name: "iota / 2",
-			expr: &ast.BinaryExpr{
-				X:  &ast.Ident{Name: "iota"},
-				Op: token.QUO,
-				Y:  &ast.BasicLit{Kind: token.INT, Value: "2"},
-			},
-			iotaVal:      4,
-			expectedVal:  2,
-			expectedIota: true,
-		},
-		{
-			name: "division by zero",
-			expr: &ast.BinaryExpr{
-				X:  &ast.Ident{Name: "iota"},
-				Op: token.QUO,
-				Y:  &ast.BasicLit{Kind: token.INT, Value: "0"},
-			},
-			iotaVal:   1,
-			expectErr: true,
-		},
-		{
-			name: "unsupported operator",
-			expr: &ast.BinaryExpr{
-				X:  &ast.Ident{Name: "iota"},
-				Op: token.REM,
-				Y:  &ast.BasicLit{Kind: token.INT, Value: "2"},
-			},
-			iotaVal:   1,
-			expectErr: true,
-		},
-		{
-			name: "unsupported left identifier",
-			expr: &ast.BinaryExpr{
-				X:  &ast.Ident{Name: "unknown"},
-				Op: token.ADD,
-				Y:  &ast.BasicLit{Kind: token.INT, Value: "1"},
-			},
-			iotaVal:   0,
-			expectErr: true,
-		},
-		{
-			name: "unsupported right identifier",
-			expr: &ast.BinaryExpr{
-				X:  &ast.BasicLit{Kind: token.INT, Value: "1"},
-				Op: token.ADD,
-				Y:  &ast.Ident{Name: "unknown"},
-			},
-			iotaVal:   0,
-			expectErr: true,
-		},
-		{
-			name: "invalid left literal",
-			expr: &ast.BinaryExpr{
-				X:  &ast.BasicLit{Kind: token.INT, Value: "invalid"},
-				Op: token.ADD,
-				Y:  &ast.Ident{Name: "iota"},
-			},
-			iotaVal:   0,
-			expectErr: true,
-		},
-		{
-			name: "invalid right literal",
-			expr: &ast.BinaryExpr{
-				X:  &ast.Ident{Name: "iota"},
-				Op: token.ADD,
-				Y:  &ast.BasicLit{Kind: token.INT, Value: "invalid"},
-			},
-			iotaVal:   0,
-			expectErr: true,
-		},
-		{
-			name: "unsupported left type",
-			expr: &ast.BinaryExpr{
-				X:  &ast.CallExpr{},
-				Op: token.ADD,
-				Y:  &ast.BasicLit{Kind: token.INT, Value: "1"},
-			},
-			iotaVal:   0,
-			expectErr: true,
-		},
-		{
-			name: "unsupported right type",
-			expr: &ast.BinaryExpr{
-				X:  &ast.BasicLit{Kind: token.INT, Value: "1"},
-				Op: token.ADD,
-				Y:  &ast.CallExpr{},
-			},
-			iotaVal:   0,
-			expectErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			val, usesIota, err := EvaluateBinaryExpr(tt.expr, tt.iotaVal)
-			if tt.expectErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tt.expectedVal, val)
-				assert.Equal(t, tt.expectedIota, usesIota)
-			}
-		})
-	}
-}
-
-func TestApplyIotaOperationNil(t *testing.T) {
-	gen, err := New("test", "")
-	require.NoError(t, err)
-
-	// test nil operation returns iotaVal unchanged
-	result := gen.applyIotaOperation(nil, 42)
-	assert.Equal(t, 42, result)
+	assert.Equal(t, int64(0), constVal(t, gen, "zeroTypeA"))
+	assert.Equal(t, int64(1), constVal(t, gen, "zeroTypeB"))
 }
 
 func TestDivisionByZeroInQUO(t *testing.T) {
@@ -1568,36 +1317,8 @@ const (
 	gen, err := New("divZero", "")
 	require.NoError(t, err)
 	err = gen.Parse(tmpDir)
-	require.NoError(t, err)
-
-	// should handle division by zero gracefully
-	assert.Equal(t, 0, gen.values["divZeroA"].value)
-}
-
-func TestInvalidUTF8CharacterLiteral(t *testing.T) {
-	// test ConvertLiteralToInt with a hex value that is valid
-	lit := &ast.BasicLit{
-		Kind:  token.CHAR,
-		Value: "'\\x80'", // this is handled correctly by strconv.Unquote
-	}
-
-	val, err := ConvertLiteralToInt(lit)
-	require.Error(t, err) // should error because \x80 is not valid UTF-8 for a char
-	assert.Contains(t, err.Error(), "invalid UTF-8")
-	assert.Equal(t, 0, val)
-}
-
-func TestMultipleCharactersInLiteral(t *testing.T) {
-	// test ConvertLiteralToInt with multiple characters
-	lit := &ast.BasicLit{
-		Kind:  token.CHAR,
-		Value: "'ab'", // invalid: multiple characters
-	}
-
-	val, err := ConvertLiteralToInt(lit)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot parse character literal")
-	assert.Equal(t, 0, val)
+	assert.Contains(t, err.Error(), "division by zero")
 }
 
 func TestGenerateWriteFileError(t *testing.T) {
@@ -1639,52 +1360,7 @@ const (
 	err = gen.Parse(tmpDir)
 	require.NoError(t, err)
 
-	assert.Equal(t, 0, gen.values["emptySpecA"].value)
-}
-
-func TestProcessExplicitValueDefaultReturn(t *testing.T) {
-	gen, err := New("test", "")
-	require.NoError(t, err)
-
-	state := &constParseState{}
-
-	// test with an unsupported expression type to trigger default return
-	expr := &ast.ParenExpr{} // unsupported type
-	result := gen.processExplicitValue(expr, state)
-	assert.Equal(t, 0, result)
-}
-
-func TestApplyIotaOperationDefaultCase(t *testing.T) {
-	gen, err := New("test", "")
-	require.NoError(t, err)
-
-	// test with unsupported operation to trigger default case
-	op := &iotaOperation{
-		op:         token.AND, // unsupported operation
-		operand:    5,
-		iotaOnLeft: true,
-	}
-
-	result := gen.applyIotaOperation(op, 10)
-	assert.Equal(t, 10, result) // should return iotaVal unchanged
-}
-
-func TestProcessBinaryExprError(t *testing.T) {
-	gen, err := New("test", "")
-	require.NoError(t, err)
-
-	state := &constParseState{iotaVal: 5}
-
-	// create an invalid binary expression
-	expr := &ast.BinaryExpr{
-		X:  &ast.FuncLit{}, // unsupported type
-		Op: token.ADD,
-		Y:  &ast.BasicLit{Kind: token.INT, Value: "10"},
-	}
-
-	val, op := gen.processBinaryExpr(expr, state)
-	assert.Equal(t, 0, val)
-	assert.Nil(t, op)
+	assert.Equal(t, int64(0), constVal(t, gen, "emptySpecA"))
 }
 
 func TestRightSideDivisionByIota(t *testing.T) {
@@ -1706,24 +1382,10 @@ const (
 	err = gen.Parse(tmpDir)
 	require.NoError(t, err)
 
-	assert.Equal(t, 0, gen.values["divByIotaA"].value)
-	assert.Equal(t, 10, gen.values["divByIotaB"].value)
-	assert.Equal(t, 5, gen.values["divByIotaC"].value)
-	assert.Equal(t, 3, gen.values["divByIotaD"].value)
-}
-
-func TestMultipleCharactersError(t *testing.T) {
-	// directly test the multiple characters check in ConvertLiteralToInt
-	// we need to craft a value that passes strconv.Unquote but has multiple runes
-	lit := &ast.BasicLit{
-		Kind:  token.CHAR,
-		Value: "'\\u0041\\u0042'", // 'AB' - two unicode characters
-	}
-
-	val, err := ConvertLiteralToInt(lit)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "character literal")
-	assert.Equal(t, 0, val)
+	assert.Equal(t, int64(0), constVal(t, gen, "divByIotaA"))
+	assert.Equal(t, int64(10), constVal(t, gen, "divByIotaB"))
+	assert.Equal(t, int64(5), constVal(t, gen, "divByIotaC"))
+	assert.Equal(t, int64(3), constVal(t, gen, "divByIotaD"))
 }
 
 func TestWriteFilePermissionError(t *testing.T) {
@@ -1771,7 +1433,7 @@ func TestParseConstBlockWithImportSpec(t *testing.T) {
 	}
 
 	// this should not panic and should handle gracefully
-	gen.parseConstBlock(decl)
+	require.NoError(t, gen.parseConstBlock(decl, newConstResolver()))
 
 	// no values should be added
 	assert.Empty(t, gen.values)
@@ -2215,33 +1877,4 @@ const (
 	// verify parse function will handle mixed case input correctly by checking the template output
 	// the parse function should always use strings.ToLower(v) for lookup
 	assert.Contains(t, string(content), `_permissionParseMap[strings.ToLower(v)]`)
-}
-
-func TestApplyIotaOperationDivisionByZeroRightSide(t *testing.T) {
-	gen, err := New("test", "")
-	require.NoError(t, err)
-
-	// test division when iota is 0 and iota is on the right side
-	op := &iotaOperation{
-		op:         token.QUO,
-		operand:    10,
-		iotaOnLeft: false, // operand / iota
-	}
-
-	// when iota is 0, division by zero should return 0
-	result := gen.applyIotaOperation(op, 0)
-	assert.Equal(t, 0, result)
-}
-
-func TestConvertLiteralToIntMultipleRunes(t *testing.T) {
-	// test the case where strconv.Unquote returns an error
-	lit := &ast.BasicLit{
-		Kind:  token.CHAR,
-		Value: "'\\U00010000\\U00010001'", // invalid: two unicode code points
-	}
-
-	val, err := ConvertLiteralToInt(lit)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot parse character literal")
-	assert.Equal(t, 0, val)
 }
