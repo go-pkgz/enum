@@ -107,7 +107,8 @@ func (g *Generator) Parse(dir string) error {
 	// group parsed files by package name; mirrors the behaviour of the deprecated parser.ParseDir
 	pkgFiles := map[string][]*ast.File{}
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
+		// the generated file is not a test file, so it can't reference anything declared in tests
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
 			continue
 		}
 		file, err := parser.ParseFile(fset, filepath.Join(dir, entry.Name()), nil, parser.ParseComments)
