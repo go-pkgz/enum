@@ -372,6 +372,30 @@ func TestGenerator(t *testing.T) {
 	})
 }
 
+func TestParseSkipsTestFiles(t *testing.T) {
+	// regression: a black-box test package next to the enum made the package clause random
+	tmpDir := t.TempDir()
+	files := map[string]string{
+		"status.go":               "package p1\ntype status int\nconst (\n\tstatusUnknown status = iota\n\tstatusActive\n)\n",
+		"status_internal_test.go": "package p1\nconst statusFromInternalTest status = 10\n",
+		"status_external_test.go": "package p1_test\nconst statusFromExternalTest = 20\n",
+	}
+	for name, body := range files {
+		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, name), []byte(body), 0o600))
+	}
+
+	gen, err := New("status", tmpDir)
+	require.NoError(t, err)
+	require.NoError(t, gen.Parse(tmpDir))
+
+	assert.Equal(t, "p1", gen.pkgName)
+	values := map[string]int64{}
+	for name := range gen.values {
+		values[name] = constVal(t, gen, name)
+	}
+	assert.Equal(t, map[string]int64{"statusUnknown": 0, "statusActive": 1}, values)
+}
+
 func TestGeneratorValues(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -665,7 +689,7 @@ const (
 
 func TestNoLinterWarningsForUnusedConstants(t *testing.T) {
 	tmpDir := t.TempDir()
-	err := os.WriteFile(filepath.Join(tmpDir, "linter_test.go"), []byte(`
+	err := os.WriteFile(filepath.Join(tmpDir, "linter.go"), []byte(`
 package test
 type linterTest uint8
 const (
