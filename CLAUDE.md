@@ -115,7 +115,7 @@ go run github.com/go-pkgz/enum@latest -type status -lower -sql -bson -yaml
 
 GitHub Actions workflow (`.github/workflows/ci.yml`):
 - Runs on all pushes and PRs
-- Tests with Go 1.24
+- Tests with the Go major.minor from the `go` directive in go.mod, latest patch (`check-latest: true`)
 - Runs tests with race detection and coverage
 - Runs golangci-lint
 - Submits coverage to Coveralls
